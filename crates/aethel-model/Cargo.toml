@@ -1,0 +1,16 @@
+[package]
+name = "aethel-model"
+version = { workspace = true }
+edition = "2021"
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+aethel-ir = { path = "../aethel-ir" }
+aethel-effects = { path = "../aethel-effects" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = "0.1"

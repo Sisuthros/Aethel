@@ -1,0 +1,40 @@
+// Canonical refund example - participates in vertical slice
+// This file is a language design test fixture.
+
+// Policy defining what constitutes a verified refund decision
+policy RefundPolicy {
+    claim RefundDecision {
+        evidence SignedAttestation "Merchant signed refund authorization"
+        evidence AuditLog "Payment gateway audit trail"
+    }
+}
+
+// Effect for payment operations
+effect PaymentGateway {
+    fn refund(decision: Verified<RefundDecision, RefundPolicy>) -> Receipt
+    fn charge(amount: int, currency: string) -> TransactionId
+}
+
+// Invalid: Claim<RefundDecision> passed where Verified<RefundDecision, RefundPolicy> required
+// This should produce AE-EPISTEMIC-001
+fn refund_invalid(claim: Claim<RefundDecision>) -> Receipt
+uses PaymentGateway:
+    return payments.refund(claim)
+
+// Valid: Claim is verified before crossing effect boundary
+fn refund_valid(claim: Claim<RefundDecision>) -> Receipt
+uses PaymentGateway:
+    let verified = verify(claim, RefundPolicy)
+    return payments.refund(verified)
+
+// Types
+struct RefundDecision {
+    transaction_id: string,
+    amount: int,
+    reason: string,
+}
+
+struct Receipt {
+    id: string,
+    status: string,
+}

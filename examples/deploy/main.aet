@@ -1,0 +1,41 @@
+// Deployment example - parser/formatter fixture
+
+effect CloudProvider {
+    fn deploy(service: ServiceSpec) -> DeploymentId
+    fn scale(deployment: DeploymentId, replicas: int) -> Unit
+    fn logs(deployment: DeploymentId) -> list<LogEntry>
+}
+
+effect ConfigStore {
+    fn get(key: string) -> Option<string>
+    fn set(key: string, value: string) -> Unit
+}
+
+struct ServiceSpec {
+    name: string,
+    image: string,
+    replicas: int,
+    env: map<string, string>,
+}
+
+struct DeploymentId {
+    id: string,
+}
+
+struct LogEntry {
+    timestamp: int,
+    level: string,
+    message: string,
+}
+
+fn deploy_service(name: string, image: string) -> DeploymentId
+uses CloudProvider, ConfigStore:
+    let spec = ServiceSpec {
+        name: name,
+        image: image,
+        replicas: 3,
+        env: {}
+    }
+    let id = cloud.deploy(spec)
+    config.set("deployment:" + name, id.id)
+    return id

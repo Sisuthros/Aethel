@@ -1,0 +1,18 @@
+[package]
+name = "aethel-check"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+aethel-syntax = { path = "../aethel-syntax" }
+aethel-hir = { path = "../aethel-hir" }
+aethel-ir = { path = "../aethel-ir" }
+aethel-effects = { path = "../aethel-effects" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+indexmap = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }

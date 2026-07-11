@@ -1,0 +1,88 @@
+//! Effect registry.
+
+use aethel_ir::lower::IrTypePath;
+use indexmap::IndexMap;
+use std::collections::HashMap;
+
+/// Effect registry for known effects and their operations.
+#[derive(Debug, Default)]
+pub struct EffectRegistry {
+    pub effects: IndexMap<String, EffectDefinition>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectDefinition {
+    pub name: String,
+    pub operations: Vec<EffectOperation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectOperation {
+    pub name: String,
+    pub params: Vec<EffectParam>,
+    pub ret_type: Option<aethel_ir::lower::IrType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectParam {
+    pub name: String,
+    pub ty: aethel_ir::lower::IrType,
+}
+
+impl EffectRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register_builtin(&mut self, name: &str, operations: &[(&str, &[(&str, &str)], Option<&str>)]) {
+        let ops = operations.iter().map(|(op_name, params, ret)| {
+            EffectOperation {
+                name: op_name.to_string(),
+                params: params.iter().map(|(param_name, param_type)| EffectParam {
+                    name: param_name.to_string(),
+                    ty: parse_type(param_type),
+                }).collect(),
+                ret_type: ret.map(parse_type),
+            }
+        }).collect();
+
+        self.effects.insert(name.to_string(), EffectDefinition {
+            name: name.to_string(),
+            operations: ops,
+        });
+    }
+
+    pub fn get(&self, name: &str) -> Option<&EffectDefinition> {
+        self.effects.get(name)
+    }
+
+    pub fn resolve_operation(&self, effect: &str, op: &str) -> Option<&EffectOperation> {
+        self.effects.get(effect)?.operations.iter().find(|o| o.name == op)
+    }
+}
+
+fn parse_type(s: &str) -> aethel_ir::lower::IrType {
+    // Simplified type parsing for builtins
+    use aethel_ir::lower::IrType;
+    match s {
+        "int" => IrType::Int { span: Default::default() },
+        "bool" => IrType::Bool { span: Default::default() },
+        "string" => IrType::String { span: Default::default() },
+        "Receipt" => IrType::Path { span: Default::default(), path: IrTypePath::single("Receipt") },
+        _ => IrType::Path { span: Default::default(), path: IrTypePath::single(s) },
+    }
+}
+
+impl aethel_ir::lower::IrTypePath {
+    fn single(name: &str) -> Self {
+        use aethel_ir::lower::{IrTypePath, IrPathSegment};
+        IrTypePath {
+            span: Default::default(),
+            segments: vec![IrPathSegment {
+                span: Default::default(),
+                name: name.to_string(),
+                args: None,
+            }],
+        }
+    }
+}

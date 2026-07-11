@@ -1,0 +1,39 @@
+// Research agent example - parser/formatter fixture
+// Uses same canonical syntax as refund example
+
+effect ModelProvider {
+    fn complete(prompt: string, max_tokens: int) -> string
+    fn embed(text: string) -> vector<float>
+}
+
+effect SearchEngine {
+    fn search(query: string, max_results: int) -> list<SearchResult>
+}
+
+struct SearchResult {
+    title: string,
+    url: string,
+    snippet: string,
+}
+
+struct ResearchReport {
+    topic: string,
+    findings: list<Finding>,
+    confidence: float,
+}
+
+struct Finding {
+    claim: string,
+    evidence: list<string>,
+    source: SearchResult,
+}
+
+fn research(topic: string) -> ResearchReport
+uses ModelProvider, SearchEngine:
+    let results = search.search(topic, 10)
+    let synthesized = model.complete("Synthesize: " + topic, 2000)
+    return ResearchReport {
+        topic: topic,
+        findings: [],
+        confidence: 0.8
+    }

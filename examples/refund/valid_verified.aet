@@ -1,0 +1,28 @@
+// Valid: Claim is verified before crossing effect boundary
+// Should compile without AE-EPISTEMIC-001
+
+fn refund_valid(claim: Claim<RefundDecision>) -> Receipt
+uses PaymentGateway:
+    let verified = verify(claim, RefundPolicy)
+    return payments.refund(verified)
+
+policy RefundPolicy {
+    claim RefundDecision {
+        evidence SignedAttestation "Merchant signed refund authorization"
+    }
+}
+
+effect PaymentGateway {
+    fn refund(decision: Verified<RefundDecision, RefundPolicy>) -> Receipt
+}
+
+struct RefundDecision {
+    transaction_id: string,
+    amount: int,
+    reason: string,
+}
+
+struct Receipt {
+    id: string,
+    status: string,
+}

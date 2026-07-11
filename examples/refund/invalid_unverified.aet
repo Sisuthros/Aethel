@@ -1,0 +1,27 @@
+// Invalid: Claim passed directly to effect requiring Verified
+// Expected error: AE-EPISTEMIC-001
+
+fn refund_invalid(claim: Claim<RefundDecision>) -> Receipt
+uses PaymentGateway:
+    return payments.refund(claim)
+
+policy RefundPolicy {
+    claim RefundDecision {
+        evidence SignedAttestation "Merchant signed refund authorization"
+    }
+}
+
+effect PaymentGateway {
+    fn refund(decision: Verified<RefundDecision, RefundPolicy>) -> Receipt
+}
+
+struct RefundDecision {
+    transaction_id: string,
+    amount: int,
+    reason: string,
+}
+
+struct Receipt {
+    id: string,
+    status: string,
+}
