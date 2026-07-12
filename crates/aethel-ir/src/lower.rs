@@ -297,6 +297,17 @@ impl IrTypePath {
             None
         }
     }
+
+    pub fn single(name: &str) -> Self {
+        IrTypePath {
+            span: Span::zero(),
+            segments: vec![IrPathSegment {
+                span: Span::zero(),
+                name: name.to_string(),
+                args: None,
+            }],
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

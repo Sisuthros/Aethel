@@ -1,10 +1,10 @@
 //! Lexer for Aethel source code.
 
 use logos::Logos;
-use crate::span::{ByteOffset, FileId, Span, Spanned};
+use crate::span::{ByteOffset, FileId, Span};
 
 /// Token kinds for the Aethel lexer.
-#[derive(Logos, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+", skip r"//[^\n]*", skip r"/\*([^*]|\*[^/])*\*/")]
 pub enum TokenKind {
     // Keywords
@@ -16,6 +16,8 @@ pub enum TokenKind {
     KwMut,
     #[token("return")]
     KwReturn,
+    #[token("owned")]
+    KwOwned,
     #[token("if")]
     KwIf,
     #[token("else")]
@@ -68,6 +70,20 @@ pub enum TokenKind {
     KwUntrustedRegion,
     #[token("assert")]
     KwAssert,
+    #[token("SignedAttestation")]
+    KwSignedAttestation,
+    #[token("CryptographicProof")]
+    KwCryptographicProof,
+    #[token("AuditLog")]
+    KwAuditLog,
+    #[token("HumanReview")]
+    KwHumanReview,
+    #[token("break")]
+    KwBreak,
+    #[token("continue")]
+    KwContinue,
+    #[token("new")]
+    KwNew,
 
     // Literals
     #[regex(r#""([^"\\]|\\.)*""#, |lex| {
@@ -142,8 +158,20 @@ pub enum TokenKind {
     Slash,
     #[token("%")]
     Percent,
+    #[token("%=")]
+    PercentEq,
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    StarEq,
+    #[token("/=")]
+    SlashEq,
     #[token("!")]
     Bang,
+    #[token("&")]
+    And,
     #[token("&&")]
     AndAnd,
     #[token("||")]
@@ -166,6 +194,7 @@ impl TokenKind {
             TokenKind::KwLet => "let",
             TokenKind::KwMut => "mut",
             TokenKind::KwReturn => "return",
+            TokenKind::KwOwned => "owned",
             TokenKind::KwIf => "if",
             TokenKind::KwElse => "else",
             TokenKind::KwWhile => "while",
@@ -192,6 +221,13 @@ impl TokenKind {
             TokenKind::KwTrustedRegion => "TrustedRegion",
             TokenKind::KwUntrustedRegion => "UntrustedRegion",
             TokenKind::KwAssert => "assert",
+            TokenKind::KwSignedAttestation => "SignedAttestation",
+            TokenKind::KwCryptographicProof => "CryptographicProof",
+            TokenKind::KwAuditLog => "AuditLog",
+            TokenKind::KwHumanReview => "HumanReview",
+            TokenKind::KwBreak => "break",
+            TokenKind::KwContinue => "continue",
+            TokenKind::KwNew => "new",
             TokenKind::String(_) => "string",
             TokenKind::Float(_) => "float",
             TokenKind::Int(_) => "int",
@@ -223,7 +259,13 @@ impl TokenKind {
             TokenKind::Star => "*",
             TokenKind::Slash => "/",
             TokenKind::Percent => "%",
+            TokenKind::PercentEq => "%=",
+            TokenKind::PlusEq => "+=",
+            TokenKind::MinusEq => "-=",
+            TokenKind::StarEq => "*=",
+            TokenKind::SlashEq => "/=",
             TokenKind::Bang => "!",
+            TokenKind::And => "&",
             TokenKind::AndAnd => "&&",
             TokenKind::OrOr => "||",
             TokenKind::DotDot => "..",
@@ -231,6 +273,11 @@ impl TokenKind {
             TokenKind::At => "@",
             TokenKind::Question => "?",
         }
+    }
+
+    /// Check if this token is an identifier.
+    pub fn is_ident(&self) -> bool {
+        matches!(self, TokenKind::Ident(_))
     }
 }
 
@@ -246,6 +293,9 @@ impl Token {
         Self { kind, span }
     }
 }
+
+/// Empty token used as a fallback when no token is available.
+pub(crate) static EMPTY_TOKEN: std::sync::OnceLock<Token> = std::sync::OnceLock::new();
 
 /// Lexer that produces tokens with spans.
 pub struct Lexer<'a> {
@@ -264,7 +314,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next(&mut self) -> Option<Token> {
-        let kind = self.logos.next()?;
+        let kind = self.logos.next()?.ok()?;
         let start = ByteOffset(self.logos.span().start as u32);
         let end = ByteOffset(self.logos.span().end as u32);
         let span = Span::new(self.file_id, start, end);
@@ -272,7 +322,11 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn collect(self) -> Vec<Token> {
-        self.into_iter().collect()
+        let mut tokens = Vec::new();
+        for token in self {
+            tokens.push(token);
+        }
+        tokens
     }
 }
 
@@ -302,6 +356,8 @@ type struct enum use mod pub
 uses ask verify commit once
 Claim Verified Policy Receipt Budget Context
 TrustedRegion UntrustedRegion assert
+SignedAttestation CryptographicProof AuditLog HumanReview
+break continue new
 "#;
         let tokens = lex(source, FileId::new(0));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwFn)));
@@ -309,23 +365,36 @@ TrustedRegion UntrustedRegion assert
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwUses)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAsk)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwClaim)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwSignedAttestation)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwBreak)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwContinue)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwNew)));
     }
 
     #[test]
     fn test_lex_literals() {
         let source = r#""hello" 42 3.14 true false"#;
         let tokens = lex(source, FileId::new(0));
-        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::String(ref s) if s == "hello")));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::String(ref s) if s == "hello")));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Int(42))));
-        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Float(f) if (f - 3.14).abs() < 0.01)));
-        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Bool(true))));
-        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Bool(false))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - 3.14).abs() < 0.01)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Bool(true))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Bool(false))));
     }
 
     #[test]
     fn test_lex_operators() {
-        let source = "= : :: ; , . -> => | ( ) { } [ ] < > <= >= == != + - * / % ! && || .. ... @ ?";
+        let source =
+            "= : :: ; , . -> => | ( ) { } [ ] < > <= >= == != + - * / % ! && || .. ... @ ? & %= += -= *= /= |= ^= <<= >>= &&= ||=";
         let tokens = lex(source, FileId::new(0));
-        assert_eq!(tokens.len(), 33);
+        assert_eq!(tokens.len(), 40);
     }
 }

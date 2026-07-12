@@ -1,10 +1,11 @@
 //! Source code span and position tracking.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::Range;
 
 /// A unique identifier for a source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FileId(pub u32);
 
 impl FileId {
@@ -14,7 +15,7 @@ impl FileId {
 }
 
 /// A byte offset from the start of a file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ByteOffset(pub u32);
 
 impl ByteOffset {
@@ -68,7 +69,7 @@ impl std::ops::Sub<ByteOffset> for ByteOffset {
 }
 
 /// A span in a source file: [start, end).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     pub file: FileId,
     pub start: ByteOffset,
@@ -104,6 +105,14 @@ impl Span {
             self.start.min(other.start),
             self.end.max(other.end),
         )
+    }
+
+    pub fn zero() -> Self {
+        Self {
+            file: FileId::new(0),
+            start: ByteOffset::new(0),
+            end: ByteOffset::new(0),
+        }
     }
 
     pub fn range(&self) -> Range<ByteOffset> {

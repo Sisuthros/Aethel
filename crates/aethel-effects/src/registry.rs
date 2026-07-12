@@ -1,6 +1,7 @@
 //! Effect registry.
 
 use aethel_ir::lower::IrTypePath;
+use aethel_syntax::span::Span;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -64,25 +65,12 @@ impl EffectRegistry {
 fn parse_type(s: &str) -> aethel_ir::lower::IrType {
     // Simplified type parsing for builtins
     use aethel_ir::lower::IrType;
+    use aethel_ir::lower::IrTypePath;
     match s {
-        "int" => IrType::Int { span: Default::default() },
-        "bool" => IrType::Bool { span: Default::default() },
-        "string" => IrType::String { span: Default::default() },
-        "Receipt" => IrType::Path { span: Default::default(), path: IrTypePath::single("Receipt") },
-        _ => IrType::Path { span: Default::default(), path: IrTypePath::single(s) },
-    }
-}
-
-impl aethel_ir::lower::IrTypePath {
-    fn single(name: &str) -> Self {
-        use aethel_ir::lower::{IrTypePath, IrPathSegment};
-        IrTypePath {
-            span: Default::default(),
-            segments: vec![IrPathSegment {
-                span: Default::default(),
-                name: name.to_string(),
-                args: None,
-            }],
-        }
+        "int" => IrType::Int { span: Span::zero() },
+        "bool" => IrType::Bool { span: Span::zero() },
+        "string" => IrType::String { span: Span::zero() },
+        "Receipt" => IrType::Path { span: Span::zero(), path: IrTypePath::single("Receipt") },
+        _ => IrType::Path { span: Span::zero(), path: IrTypePath::single(s) },
     }
 }

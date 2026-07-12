@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 
 /// Symbol table for name resolution.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SymbolTable {
     pub types: IndexMap<String, TypeSymbol>,
     pub values: IndexMap<String, ValueSymbol>,
@@ -49,8 +49,8 @@ pub struct ModuleSymbol {
     pub name: String,
     pub items: SymbolTable,
 }
-
-#[derive(Debug, Default)]
+/// A scope in the symbol table.
+#[derive(Debug, Default, Clone)]
 pub struct Scope {
     pub type_names: Vec<String>,
     pub value_names: Vec<String>,
