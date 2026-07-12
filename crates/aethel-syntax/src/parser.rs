@@ -1,8 +1,8 @@
 //! Handwritten recursive-descent parser with Pratt parser for expressions.
 
 use crate::ast::*;
-use crate::diagnostic::{codes, DiagnosticBuilder, Diagnostics, DiagnosticSeverity};
-use crate::lexer::{Token, TokenKind};
+use crate::diagnostic::{codes, DiagnosticBuilder, DiagnosticSeverity, Diagnostics};
+use crate::lexer::{Token, TokenKind, EMPTY_TOKEN};
 use crate::span::{ByteOffset, FileId, Span, Spanned};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
@@ -124,7 +124,7 @@ impl<'a> Parser<'a> {
 
         // Unexpected token
         self.error(
-            codes::PARSE_ERROR,
+            codes::PARSE_ERROR(),
             "expected item (fn, struct, enum, type, use, mod, policy)",
         );
         None
@@ -377,7 +377,7 @@ impl<'a> Parser<'a> {
             // Handle `Claim<T>` as a type, not a policy definition
             // This should not be parsed as an item
             self.error(
-                codes::PARSE_ERROR,
+                codes::PARSE_ERROR(),
                 "`Claim` is a type, not a standalone definition",
             );
             return None;
@@ -466,7 +466,7 @@ impl<'a> Parser<'a> {
             Some(EvidenceKind::Custom(s))
         } else {
             self.error(
-                codes::PARSE_ERROR,
+                codes::PARSE_ERROR(),
                 "expected evidence kind (SignedAttestation, CryptographicProof, AuditLog, HumanReview, or Custom)",
             );
             None
@@ -692,7 +692,7 @@ impl<'a> Parser<'a> {
                 name: match pat {
                     Pat::Ident { name, .. } => name,
                     _ => {
-                        self.error(codes::PARSE_ERROR, "expected identifier in let binding");
+                        self.error(codes::PARSE_ERROR(), "expected identifier in let binding");
                         Ident::dummy("error")
                     }
                 },
@@ -878,7 +878,7 @@ impl<'a> Parser<'a> {
         }
 
         // Identifier or path pattern
-        if self.check(TokenKind::Ident) {
+        if self.check(TokenKind::Ident(String::new())) {
             let ident = self.parse_ident()?;
 
             // Check for struct pattern
@@ -930,7 +930,7 @@ impl<'a> Parser<'a> {
 
             // Check for enum variant pattern (path::Variant(args))
             if self.check(TokenKind::ColonColon) {
-                let path = self.parse_expr_path_starting_with(ident)?;
+                let path = self.parse_expr_path_starting_with(ident.clone())?;
                 if self.check(TokenKind::LParen) {
                     self.eat(TokenKind::LParen);
                     let mut pats = Vec::new();
@@ -944,7 +944,10 @@ impl<'a> Parser<'a> {
                     let end = self.previous_span();
                     return Some(Pat::Enum {
                         span: start.merge(end),
-                        path,
+                        path: TypePath {
+                            span: path.span,
+                            segments: path.segments,
+                        },
                         fields: pats,
                     });
                 }
@@ -983,7 +986,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        self.error(codes::PARSE_ERROR, "expected pattern");
+        self.error(codes::PARSE_ERROR(), "expected pattern");
         None
     }
 
@@ -1038,7 +1041,7 @@ impl<'a> Parser<'a> {
         }
 
         // Identifiers and paths
-        if self.check(TokenKind::Ident) {
+        if self.check(TokenKind::Ident(String::new())) {
             let ident = self.parse_ident()?;
 
             // Check for path (Type::Variant or module::item)
@@ -1130,7 +1133,7 @@ impl<'a> Parser<'a> {
         }
 
         // Struct literal
-        if self.check(TokenKind::Ident) && self.peek(1).map_or(false, |t| t.kind == TokenKind::LBrace) {
+                if self.check_ident() && self.peek(1).map_or(false, |t| t.kind == TokenKind::LBrace) {
             let ident = self.parse_ident()?;
             let path = TypePath::single(ident.span, ident);
             return self.parse_struct_expr(path, start);
@@ -1242,7 +1245,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        self.error(codes::PARSE_ERROR, "expected expression");
+        self.error(codes::PARSE_ERROR(), "expected expression");
         None
     }
 
@@ -1557,7 +1560,7 @@ impl<'a> Parser<'a> {
         let goal = if let Some(s) = self.parse_string_literal() {
             s
         } else {
-            self.error(codes::PARSE_ERROR, "expected string literal for goal");
+            self.error(codes::PARSE_ERROR(), "expected string literal for goal");
             String::new()
         };
         self.expect(TokenKind::Comma, "expected `,`")?;
@@ -1915,7 +1918,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_generic_arg(&mut self) -> Option<GenericArg> {
-        if self.check(TokenKind::Ident) || self.check(TokenKind::KwFn) {
+        if self.check_ident() || self.check(TokenKind::KwFn) {
             Some(GenericArg::Type {
                 span: self.current_span(),
                 ty: self.parse_type()?,
@@ -1936,7 +1939,7 @@ impl<'a> Parser<'a> {
             self.advance();
             Some(ident)
         } else {
-            self.error(codes::PARSE_ERROR, "expected identifier");
+            self.error(codes::PARSE_ERROR(), "expected identifier");
             None
         }
     }
@@ -1971,12 +1974,17 @@ impl<'a> Parser<'a> {
     }
 
     fn current_token(&self) -> &Token {
-        self.tokens
-            .get(self.current)
-            .unwrap_or(&Token::new(TokenKind::Ident("".into()), self.current_span()))
-    }
+            self.tokens
+                .get(self.current)
+                .unwrap_or_else(|| EMPTY_TOKEN.get_or_init(|| {
+                    Token::new(
+                        TokenKind::Ident(String::new()),
+                        Span::new(FileId::new(0), ByteOffset(0), ByteOffset(0)),
+                    )
+                }))
+        }
 
-    fn peek(&self, offset: usize) -> Option<&Token> {
+        fn peek(&self, offset: usize) -> Option<&Token> {
         self.tokens.get(self.current + offset)
     }
 
@@ -2000,10 +2008,14 @@ impl<'a> Parser<'a> {
     }
 
     fn check(&self, kind: TokenKind) -> bool {
-        !self.is_at_end() && std::mem::discriminant(&self.current_token().kind) == std::mem::discriminant(&kind)
-    }
+            !self.is_at_end() && std::mem::discriminant(&self.current_token().kind) == std::mem::discriminant(&kind)
+        }
 
-    fn eat(&mut self, kind: TokenKind) -> bool {
+        fn check_ident(&self) -> bool {
+            !self.is_at_end() && self.current_token().kind.is_ident()
+        }
+
+        fn eat(&mut self, kind: TokenKind) -> bool {
         if self.check(kind) {
             self.advance();
             true
@@ -2016,7 +2028,7 @@ impl<'a> Parser<'a> {
         if self.check(kind) {
             Some(self.advance())
         } else {
-            self.error(codes::PARSE_ERROR, msg);
+            self.error(codes::PARSE_ERROR(), msg);
             None
         }
     }

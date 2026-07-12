@@ -8,6 +8,7 @@ rust-version = { workspace = true }
 
 [dependencies]
 aethel-ir = { path = "../aethel-ir" }
+aethel-syntax = { path = "../aethel-syntax" }
 aethel-runtime = { path = "../aethel-runtime" }
 aethel-effects = { path = "../aethel-effects" }
 aethel-model = { path = "../aethel-model" }

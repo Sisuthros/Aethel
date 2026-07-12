@@ -1,10 +1,11 @@
 //! Main type checker orchestration.
 
 use aethel_hir::lower::HirModule;
-use aethel_ir::lower::IrModule;
+use aethel_ir::lower::{IrModule, IrType};
 use aethel_syntax::diagnostic::{Diagnostics, DiagnosticCode, DiagnosticSeverity};
 use aethel_syntax::span::{FileId, Span};
 use aethel_effects::EffectRegistry;
+use crate::types::HirExprSpan;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -148,8 +149,8 @@ fn collect_type_defs(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) 
             for variant in &e.variants {
                 let types: Vec<_> = variant.fields.iter()
                     .map(|f| match f {
-                        aethel_hir::lower::HirEnumField::Tuple { ty, .. } => ty.clone(),
-                        aethel_hir::lower::HirEnumField::Named { ty, .. } => ty.clone(),
+                        aethel_hir::lower::HirEnumField::Tuple { ty, .. } => crate::types::lower_hir_type(&ty),
+                        aethel_hir::lower::HirEnumField::Named { ty, .. } => crate::types::lower_hir_type(&ty),
                     })
                     .collect();
                 variants.insert(variant.name.clone(), types);
@@ -161,7 +162,7 @@ fn collect_type_defs(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) 
         }
         HirItem::TypeAlias(t) => {
             ctx.type_env.type_defs.insert(t.name.clone(), TypeDefinition {
-                kind: TypeDefKind::TypeAlias { ty: t.ty.clone() },
+                kind: TypeDefKind::TypeAlias { ty: crate::types::lower_hir_type(&t.ty) },
                 generics: t.generics.iter().map(|g| g.name.clone()).collect(),
             });
         }
@@ -176,7 +177,7 @@ fn collect_type_defs(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) 
                     aethel_hir::lower::HirEvidenceKind::Custom(s) => EvidenceKind::Custom(s.clone()),
                 }).collect();
                 claims.insert(claim.name.clone(), PolicyClaim {
-                    ty: claim.ty.clone(),
+                    ty: crate::types::lower_hir_type(&claim.ty),
                     evidence,
                 });
             }
@@ -230,10 +231,10 @@ fn check_fn(ctx: &mut CheckContext, f: &aethel_hir::lower::HirFnDef) -> Option<a
         params: f.params.iter().map(|p| aethel_ir::lower::IrParam {
             span: p.span,
             name: p.name.clone(),
-            ty: p.ty.clone(),
+            ty: crate::types::lower_hir_type(&p.ty),
             is_mut: p.is_mut,
         }).collect(),
-        ret_type: f.ret_type.clone().unwrap_or_else(|| aethel_ir::lower::IrType::Unit { span: f.span }),
+        ret_type: f.ret_type.as_ref().map(|t| crate::types::lower_hir_type(t)).unwrap_or(aethel_ir::lower::IrType::Unit { span: f.span }),
         effects: lower_effect_set(&f.effects),
         body,
         is_pub: f.is_pub,
@@ -246,7 +247,7 @@ fn check_block(ctx: &mut CheckContext, block: &aethel_hir::lower::HirBlock) -> O
     for stmt in &block.stmts {
         stmts.push(check_stmt(ctx, stmt)?);
     }
-    let tail = block.tail.as_ref().map(|e| Box::new(check_expr(ctx, e)?));
+    let tail = block.tail.as_ref().and_then(|e| check_expr(ctx, e)).map(Box::new);
     ctx.type_env.exit_scope();
 
     Some(aethel_ir::lower::IrBlock {
@@ -262,10 +263,10 @@ fn check_stmt(ctx: &mut CheckContext, stmt: &aethel_hir::lower::HirStmt) -> Opti
 
     match stmt {
         HirStmt::Let { span, name, ty, is_mut, init } => {
-            let init_ir = init.as_ref().map(|e| check_expr(ctx, e)).transpose()?;
-            let ty_ir = ty.clone().unwrap_or_else(|| {
+            let init_ir = init.as_ref().and_then(|e| check_expr(ctx, e));
+            let ty_ir = ty.as_ref().map(|t| crate::types::lower_hir_type(t)).unwrap_or_else(|| {
                 // Infer from init
-                init_ir.as_ref().map(|e| e.ty().clone()).unwrap_or(aethel_ir::lower::IrType::Unit { span: *span })
+                aethel_ir::lower::IrType::Unit { span: *span }
             });
             ctx.type_env.variables.insert(name.clone(), VariableInfo {
                 ty: ty_ir.clone(),
@@ -278,14 +279,14 @@ fn check_stmt(ctx: &mut CheckContext, stmt: &aethel_hir::lower::HirStmt) -> Opti
             Some(IrStmt::Expr { span: *span, expr: check_expr(ctx, expr)? })
         }
         HirStmt::Return { span, expr } => {
-            Some(IrStmt::Return { span: *span, expr: expr.as_ref().map(|e| check_expr(ctx, e)).transpose()? })
+            Some(IrStmt::Return { span: *span, expr: expr.as_ref().and_then(|e| check_expr(ctx, e)) })
         }
         HirStmt::If { span, cond, then_branch, else_branch } => {
             Some(IrStmt::If {
                 span: *span,
                 cond: check_expr(ctx, cond)?,
                 then_branch: check_block(ctx, then_branch)?,
-                else_branch: else_branch.as_ref().map(|b| Box::new(check_stmt(ctx, b))).transpose()?,
+                else_branch: else_branch.as_ref().and_then(|b| check_stmt(ctx, b)).map(Box::new),
             })
         }
         HirStmt::While { span, cond, body } => {
@@ -339,12 +340,15 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
             Some(IrExpr::Struct {
                 span,
                 path: lower_type_path(path),
-                fields: fields.iter().map(|f| aethel_ir::lower::IrStructExprField {
-                    span: f.span,
-                    name: f.name.clone(),
-                    expr: check_expr(ctx, &f.expr)?,
+                fields: fields.iter().map(|f| {
+                    let expr = check_expr(ctx, &f.expr)?;
+                    Some(aethel_ir::lower::IrStructExprField {
+                        span: f.span,
+                        name: f.name.clone(),
+                        expr,
+                    })
                 }).collect::<Option<Vec<_>>>()?,
-                base: base.as_ref().map(|b| Box::new(check_expr(ctx, b))).transpose()?,
+                base: base.as_ref().and_then(|b| check_expr(ctx, b)).map(Box::new),
             })
         }
         HirExpr::Call { callee, args, .. } => {
@@ -396,7 +400,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                 span,
                 cond: Box::new(check_expr(ctx, cond)?),
                 then_branch: Box::new(check_expr(ctx, then_branch)?),
-                else_branch: else_branch.as_ref().map(|e| Box::new(check_expr(ctx, e))).transpose()?,
+                else_branch: else_branch.as_ref().and_then(|e| check_expr(ctx, e)).map(Box::new),
             })
         }
         HirExpr::Match { scrutinee, arms, .. } => {
@@ -413,7 +417,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
             Some(IrExpr::Let {
                 span,
                 pat: check_pat(ctx, pat)?,
-                ty: ty.clone().unwrap_or_else(|| aethel_ir::lower::IrType::Unit { span }),
+                ty: ty.as_ref().map(|t| crate::types::lower_hir_type(t)).unwrap_or(aethel_ir::lower::IrType::Unit { span }),
                 is_mut: *is_mut,
                 init: Box::new(check_expr(ctx, init)?),
             })
@@ -421,13 +425,13 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
         HirExpr::Return { expr, .. } => {
             Some(IrExpr::Return {
                 span,
-                expr: expr.as_ref().map(|e| Box::new(check_expr(ctx, e))).transpose()?,
+                expr: expr.as_ref().and_then(|e| check_expr(ctx, e)).map(Box::new),
             })
         }
         HirExpr::Break { expr, .. } => {
             Some(IrExpr::Break {
                 span,
-                expr: expr.as_ref().map(|e| Box::new(check_expr(ctx, e))).transpose()?,
+                expr: expr.as_ref().and_then(|e| check_expr(ctx, e)).map(Box::new),
             })
         }
         HirExpr::Continue { .. } => {
@@ -439,7 +443,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                 model: lower_expr_path(model),
                 goal: goal.clone(),
                 input: Box::new(check_expr(ctx, input)?),
-                output_ty: output_ty.clone(),
+                output_ty: crate::types::lower_hir_type(&output_ty),
             })
         }
         HirExpr::Verify { claim, policy, .. } => {
@@ -481,7 +485,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
         HirExpr::New { ty, args, .. } => {
             Some(IrExpr::New {
                 span,
-                ty: ty.clone(),
+                ty: crate::types::lower_hir_type(&ty),
                 args: args.iter().map(|a| check_expr(ctx, a)).collect::<Option<Vec<_>>>()?,
             })
         }
@@ -492,7 +496,7 @@ fn check_match_arm(ctx: &mut CheckContext, arm: &aethel_hir::lower::HirMatchArm)
     Some(aethel_ir::lower::IrMatchArm {
         span: arm.span,
         pat: check_pat(ctx, &arm.pat)?,
-        guard: arm.guard.as_ref().map(|g| check_expr(ctx, g)).transpose()?,
+        guard: arm.guard.as_ref().and_then(|g| check_expr(ctx, g)),
         body: check_expr(ctx, &arm.body)?,
     })
 }
@@ -519,8 +523,8 @@ fn check_pat(ctx: &mut CheckContext, pat: &aethel_hir::lower::HirPat) -> Option<
             fields: fields.iter().map(|f| aethel_ir::lower::IrPatField {
                 span: f.span,
                 name: f.name.clone(),
-                pat: f.pat.as_ref().map(|p| check_pat(ctx, p)).transpose()?,
-            }).collect::<Option<Vec<_>>>()?,
+                pat: f.pat.as_ref().and_then(|p| check_pat(ctx, p)).map(Box::new),
+            }).collect(),
         }),
         HirPat::Enum { span, path, fields } => Some(IrPat::Enum {
             span: *span,
@@ -548,7 +552,7 @@ fn lower_struct(s: &aethel_hir::lower::HirStructDef) -> aethel_ir::lower::IrStru
         fields: s.fields.iter().map(|f| aethel_ir::lower::IrStructField {
             span: f.span,
             name: f.name.clone(),
-            ty: f.ty.clone(),
+            ty: crate::types::lower_hir_type(&f.ty),
             is_pub: f.is_pub,
         }).collect(),
         is_pub: s.is_pub,
@@ -571,8 +575,8 @@ fn lower_enum(e: &aethel_hir::lower::HirEnumDef) -> aethel_ir::lower::IrEnumDef 
             span: v.span,
             name: v.name.clone(),
             fields: v.fields.iter().map(|f| match f {
-                aethel_hir::lower::HirEnumField::Tuple { span, ty } => aethel_ir::lower::IrEnumField::Tuple { span: *span, ty: ty.clone() },
-                aethel_hir::lower::HirEnumField::Named { span, name, ty } => aethel_ir::lower::IrEnumField::Named { span: *span, name: name.clone(), ty: ty.clone() },
+                aethel_hir::lower::HirEnumField::Tuple { span, ty } => aethel_ir::lower::IrEnumField::Tuple { span: *span, ty: crate::types::lower_hir_type(&ty) },
+                aethel_hir::lower::HirEnumField::Named { span, name, ty } => aethel_ir::lower::IrEnumField::Named { span: *span, name: name.clone(), ty: crate::types::lower_hir_type(&ty) },
             }).collect(),
         }).collect(),
         is_pub: e.is_pub,
@@ -619,7 +623,7 @@ fn lower_mod(m: &aethel_hir::lower::HirModDecl) -> aethel_ir::lower::IrModDecl {
         span: m.span,
         name: m.name.clone(),
         body: m.body.as_ref().map(|b| {
-            let (items, _) = crate::check_module(b, m.span.file_id.unwrap_or_default());
+            let (items, _) = crate::check_module(b, m.span.file);
             items
         }),
         is_pub: m.is_pub,
@@ -667,7 +671,7 @@ fn lower_type_path(p: &aethel_hir::lower::HirTypePath) -> aethel_ir::lower::IrTy
             args: s.args.as_ref().map(|a| aethel_ir::lower::IrGenericArgs {
                 span: a.span,
                 args: a.args.iter().map(|arg| match arg {
-                    aethel_hir::lower::HirGenericArg::Type { span, ty } => aethel_ir::lower::IrGenericArg::Type { span: *span, ty: ty.clone() },
+                    aethel_hir::lower::HirGenericArg::Type { span, ty } => aethel_ir::lower::IrGenericArg::Type { span: *span, ty: crate::types::lower_hir_type(&ty) },
                     aethel_hir::lower::HirGenericArg::Const { span, expr } => aethel_ir::lower::IrGenericArg::Const { span: *span, expr: expr.clone() },
                 }).collect(),
             }),

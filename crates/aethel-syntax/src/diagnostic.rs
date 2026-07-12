@@ -1,23 +1,39 @@
 //! Diagnostics and error reporting.
 
 use crate::span::{FileId, Span};
-use codespan_reporting::diagnostic::{Diagnostic, Label, LabelStyle, Severity};
+use codespan_reporting::diagnostic::{Diagnostic, Label, Severity};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::term::{self, Config};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Local label style for serialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LabelStyle {
+    Primary,
+    Secondary,
+}
+
+impl From<LabelStyle> for codespan_reporting::diagnostic::LabelStyle {
+    fn from(s: LabelStyle) -> Self {
+        match s {
+            LabelStyle::Primary => codespan_reporting::diagnostic::LabelStyle::Primary,
+            LabelStyle::Secondary => codespan_reporting::diagnostic::LabelStyle::Secondary,
+        }
+    }
+}
+
 /// A unique diagnostic code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct DiagnosticCode(pub &'static str);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DiagnosticCode(pub String);
 
 impl DiagnosticCode {
-    pub const fn new(code: &'static str) -> Self {
-        Self(code)
+    pub fn new(code: &str) -> Self {
+        Self(code.to_string())
     }
 
-    pub fn as_str(&self) -> &'static str {
-        self.0
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -31,58 +47,65 @@ impl fmt::Display for DiagnosticCode {
 pub mod codes {
     use super::DiagnosticCode;
 
+    macro_rules! code {
+        ($name:ident, $value:expr) => {
+            pub fn $name() -> DiagnosticCode {
+                DiagnosticCode::new($value)
+            }
+        };
+    }
+
     // Parse errors
-    pub const PARSE_ERROR: DiagnosticCode = DiagnosticCode::new("AE-PARSE-001");
-    pub const UNEXPECTED_TOKEN: DiagnosticCode = DiagnosticCode::new("AE-PARSE-002");
-    pub const UNTERMINATED_STRING: DiagnosticCode = DiagnosticCode::new("AE-PARSE-003");
-    pub const INVALID_NUMBER: DiagnosticCode = DiagnosticCode::new("AE-PARSE-004");
-    pub const INVALID_ESCAPE: DiagnosticCode = DiagnosticCode::new("AE-PARSE-005");
+    code!(PARSE_ERROR, "AE-PARSE-001");
+    code!(UNEXPECTED_TOKEN, "AE-PARSE-002");
+    code!(UNTERMINATED_STRING, "AE-PARSE-003");
+    code!(INVALID_NUMBER, "AE-PARSE-004");
+    code!(INVALID_ESCAPE, "AE-PARSE-005");
 
     // Type errors
-    pub const TYPE_MISMATCH: DiagnosticCode = DiagnosticCode::new("AE-TYPE-001");
-    pub const TYPE_NOT_FOUND: DiagnosticCode = DiagnosticCode::new("AE-TYPE-002");
-    pub const UNEXPECTED_TYPE_ARGS: DiagnosticCode = DiagnosticCode::new("AE-TYPE-003");
-    pub const MISSING_TYPE_ARGS: DiagnosticCode = DiagnosticCode::new("AE-TYPE-004");
-    pub const RECURSIVE_TYPE: DiagnosticCode = DiagnosticCode::new("AE-TYPE-005");
-    pub const INVALID_SELF_TYPE: DiagnosticCode = DiagnosticCode::new("AE-TYPE-006");
-    pub const TYPE_ANNOTATION_REQUIRED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-007");
-    pub const UNIFIED_TYPE_MISMATCH: DiagnosticCode = DiagnosticCode::new("AE-TYPE-008");
-    pub const INFINITE_TYPE: DiagnosticCode = DiagnosticCode::new("AE-TYPE-009");
-    pub const UNSUPPORTED_TYPE_OP: DiagnosticCode = DiagnosticCode::new("AE-TYPE-010");
-    pub const LINEAR_TYPE_MISUSE: DiagnosticCode = DiagnosticCode::new("AE-TYPE-011");
-    pub const LINEAR_USE_AFTER_MOVE: DiagnosticCode = DiagnosticCode::new("AE-TYPE-012");
-    pub const LINEAR_NOT_CONSUMED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-013");
-    pub const CAPABILITY_REQUIRED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-014");
-    pub const CAPABILITY_DUPLICATED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-015");
-    pub const CAPABILITY_ESCAPED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-016");
-    pub const EFFECT_NOT_HANDLED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-017");
-    pub const EFFECT_NOT_DECLARED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-018");
-    pub const TYPE_COMMIT_ONCE_REQUIRED: DiagnosticCode = DiagnosticCode::new("AE-TYPE-019");
+    code!(TYPE_MISMATCH, "AE-TYPE-001");
+    code!(TYPE_NOT_FOUND, "AE-TYPE-002");
+    code!(UNEXPECTED_TYPE_ARGS, "AE-TYPE-003");
+    code!(MISSING_TYPE_ARGS, "AE-TYPE-004");
+    code!(RECURSIVE_TYPE, "AE-TYPE-005");
+    code!(INVALID_SELF_TYPE, "AE-TYPE-006");
+    code!(TYPE_ANNOTATION_REQUIRED, "AE-TYPE-007");
+    code!(UNIFIED_TYPE_MISMATCH, "AE-TYPE-008");
+    code!(INFINITE_TYPE, "AE-TYPE-009");
+    code!(UNSUPPORTED_TYPE_OP, "AE-TYPE-010");
+    code!(LINEAR_TYPE_MISUSE, "AE-TYPE-011");
+    code!(LINEAR_USE_AFTER_MOVE, "AE-TYPE-012");
+    code!(LINEAR_NOT_CONSUMED, "AE-TYPE-013");
+    code!(CAPABILITY_REQUIRED, "AE-TYPE-014");
+    code!(CAPABILITY_DUPLICATED, "AE-TYPE-015");
+    code!(CAPABILITY_ESCAPED, "AE-TYPE-016");
+    code!(EFFECT_NOT_HANDLED, "AE-TYPE-017");
+    code!(EFFECT_NOT_DECLARED, "AE-TYPE-018");
+    code!(TYPE_COMMIT_ONCE_REQUIRED, "AE-TYPE-019");
 
     // Epistemic type errors (the key guarantee)
-    pub const EPISTEMIC_CLAIM_NOT_VERIFIED: DiagnosticCode =
-        DiagnosticCode::new("AE-EPISTEMIC-001");
-    pub const EPISTEMIC_VERIFIED_REQUIRED: DiagnosticCode = DiagnosticCode::new("AE-EPISTEMIC-002");
-    pub const EPISTEMIC_POLICY_MISMATCH: DiagnosticCode = DiagnosticCode::new("AE-EPISTEMIC-003");
-    pub const EPISTEMIC_CLAIM_ESCAPE: DiagnosticCode = DiagnosticCode::new("AE-EPISTEMIC-004");
-    pub const EPISTEMIC_VERIFY_FAILED: DiagnosticCode = DiagnosticCode::new("AE-EPISTEMIC-005");
-    pub const EPISTEMIC_BUDGET_EXCEEDED: DiagnosticCode = DiagnosticCode::new("AE-EPISTEMIC-006");
+    code!(EPISTEMIC_CLAIM_NOT_VERIFIED, "AE-EPISTEMIC-001");
+    code!(EPISTEMIC_VERIFIED_REQUIRED, "AE-EPISTEMIC-002");
+    code!(EPISTEMIC_POLICY_MISMATCH, "AE-EPISTEMIC-003");
+    code!(EPISTEMIC_CLAIM_ESCAPE, "AE-EPISTEMIC-004");
+    code!(EPISTEMIC_VERIFY_FAILED, "AE-EPISTEMIC-005");
+    code!(EPISTEMIC_BUDGET_EXCEEDED, "AE-EPISTEMIC-006");
 
     // Name resolution errors
-    pub const UNDEFINED_VAR: DiagnosticCode = DiagnosticCode::new("AE-NAME-001");
-    pub const UNDEFINED_TYPE: DiagnosticCode = DiagnosticCode::new("AE-NAME-002");
-    pub const UNDEFINED_EFFECT: DiagnosticCode = DiagnosticCode::new("AE-NAME-003");
-    pub const UNDEFINED_MODULE: DiagnosticCode = DiagnosticCode::new("AE-NAME-004");
-    pub const AMBIGUOUS_NAME: DiagnosticCode = DiagnosticCode::new("AE-NAME-005");
-    pub const SHADOWED_NAME: DiagnosticCode = DiagnosticCode::new("AE-NAME-006");
-    pub const UNUSED_IMPORT: DiagnosticCode = DiagnosticCode::new("AE-NAME-007");
+    code!(UNDEFINED_VAR, "AE-NAME-001");
+    code!(UNDEFINED_TYPE, "AE-NAME-002");
+    code!(UNDEFINED_EFFECT, "AE-NAME-003");
+    code!(UNDEFINED_MODULE, "AE-NAME-004");
+    code!(AMBIGUOUS_NAME, "AE-NAME-005");
+    code!(SHADOWED_NAME, "AE-NAME-006");
+    code!(UNUSED_IMPORT, "AE-NAME-007");
 
     // Other errors
-    pub const RECURSION_LIMIT: DiagnosticCode = DiagnosticCode::new("AE-OTHER-001");
-    pub const INTERNAL_ERROR: DiagnosticCode = DiagnosticCode::new("AE-OTHER-002");
-    pub const NOT_IMPLEMENTED: DiagnosticCode = DiagnosticCode::new("AE-OTHER-003");
-    pub const DEPRECATED: DiagnosticCode = DiagnosticCode::new("AE-OTHER-004");
-    pub const UNREACHABLE_CODE: DiagnosticCode = DiagnosticCode::new("AE-OTHER-005");
+    code!(RECURSION_LIMIT, "AE-OTHER-001");
+    code!(INTERNAL_ERROR, "AE-OTHER-002");
+    code!(NOT_IMPLEMENTED, "AE-OTHER-003");
+    code!(DEPRECATED, "AE-OTHER-004");
+    code!(UNREACHABLE_CODE, "AE-OTHER-005");
 }
 
 /// Diagnostic severity levels.
@@ -192,12 +215,15 @@ impl Diagnostics {
 }
 
 /// Convert internal diagnostics to codespan-reporting format for rendering.
-pub fn render_diagnostics(
+pub fn render_diagnostics<'a, F>(
     writer: &mut StandardStream,
     config: &Config,
-    files: &dyn codespan_reporting::files::Files<'_, FileId = FileId, Name = String, Source = str>,
+    files: &'a F,
     diagnostics: &Diagnostics,
-) -> Result<(), codespan_reporting::files::Error> {
+) -> Result<(), codespan_reporting::files::Error>
+where
+    F: codespan_reporting::files::Files<'a, FileId = FileId, Name = String, Source = str>,
+{
     for diag in &diagnostics.items {
         let diagnostic = Diagnostic::new(diag.severity.into())
             .with_code(diag.code.to_string())
@@ -206,8 +232,9 @@ pub fn render_diagnostics(
                 diag.labels
                     .iter()
                     .map(|l| {
+                        let style: codespan_reporting::diagnostic::LabelStyle = l.style.into();
                         Label::new(
-                            l.style,
+                            style,
                             l.span.file,
                             l.span.start.0 as usize..l.span.end.0 as usize,
                         )
@@ -215,8 +242,13 @@ pub fn render_diagnostics(
                     })
                     .collect::<Vec<_>>(),
             )
-            .with_notes(diag.notes.clone())
-            .with_help(diag.help.clone().unwrap_or_default());
+            .with_notes({
+                let mut notes = diag.notes.clone();
+                if let Some(ref help) = diag.help {
+                    notes.push(help.clone());
+                }
+                notes
+            });
 
         term::emit(writer, config, files, &diagnostic)?;
     }
@@ -256,16 +288,16 @@ impl DiagnosticBuilder {
         }
     }
 
-    pub fn note(code: DiagnosticCode, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            severity: DiagnosticSeverity::Note,
-            message: message.into(),
-            labels: Vec::new(),
-            notes: Vec::new(),
-            help: None,
+    pub fn note_severity(code: DiagnosticCode, message: impl Into<String>) -> Self {
+            Self {
+                code,
+                severity: DiagnosticSeverity::Note,
+                message: message.into(),
+                labels: Vec::new(),
+                notes: Vec::new(),
+                help: None,
+            }
         }
-    }
 
     pub fn label(mut self, style: LabelStyle, span: Span, message: impl Into<String>) -> Self {
         self.labels.push(LabelInfo {
@@ -316,12 +348,12 @@ mod tests {
     #[test]
     fn test_diagnostic_builder() {
         let span = Span::new(FileId::new(0), ByteOffset(0), ByteOffset(10));
-        let diag = DiagnosticBuilder::error(codes::TYPE_MISMATCH, "type mismatch")
-            .primary_label(span, "expected `int`, found `string`")
-            .note("help: try converting the string to an int")
-            .build();
+                let diag = DiagnosticBuilder::error(codes::TYPE_MISMATCH(), "type mismatch")
+                    .primary_label(span, "expected `int`, found `string`")
+                    .note("help: try converting the string to an int")
+                    .build();
 
-        assert_eq!(diag.code, codes::TYPE_MISMATCH);
+                assert_eq!(diag.code, codes::TYPE_MISMATCH());
         assert_eq!(diag.severity, DiagnosticSeverity::Error);
         assert_eq!(diag.labels.len(), 1);
         assert_eq!(diag.notes.len(), 1);
