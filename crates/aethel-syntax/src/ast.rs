@@ -29,6 +29,7 @@ pub enum Item {
     Use(UseDecl),
     Mod(ModDecl),
     Policy(PolicyDef),
+    Effect(EffectDef),
 }
 
 impl Spanned for Item {
@@ -41,6 +42,7 @@ impl Spanned for Item {
             Item::Use(u) => u.span,
             Item::Mod(m) => m.span,
             Item::Policy(p) => p.span,
+            Item::Effect(e) => e.span,
         }
     }
 }
@@ -292,6 +294,36 @@ pub struct PolicyDef {
 }
 
 impl Spanned for PolicyDef {
+    fn span(&self) -> Span {
+        self.span
+    }
+}
+
+/// Effect definition (external side-effect boundary with operations).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EffectDef {
+    pub span: Span,
+    pub name: Ident,
+    pub operations: Vec<EffectOperation>,
+    pub is_pub: bool,
+}
+
+impl Spanned for EffectDef {
+    fn span(&self) -> Span {
+        self.span
+    }
+}
+
+/// An operation (function signature) exposed by an effect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EffectOperation {
+    pub span: Span,
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub ret_type: Option<Type>,
+}
+
+impl Spanned for EffectOperation {
     fn span(&self) -> Span {
         self.span
     }

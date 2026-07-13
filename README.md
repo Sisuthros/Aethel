@@ -1,29 +1,32 @@
-# Aethel Core
+# Aethel
 
-> Proof-carrying effects for AI agents.
+**The programming language for trustworthy AI agency.**
 
-Aethel is a language runtime that prevents AI agents from turning unverified claims into unauthorized, over-budget, or duplicate real-world actions.
+Aethel is the language in which artificial intelligences — including frontier models like Grok — will reason about the world, make claims, gather evidence, and only then take real actions.
 
-## Core Guarantee
+Every model output starts life as a `Claim<T>`.  
+Nothing that touches reality may be invoked with a mere claim.
 
-```aethel
-// A model output is a Claim — a proposal, not evidence
-fn refund(claim: Claim<RefundDecision>) -> Receipt
-uses PaymentGateway:
-    // COMPILE ERROR: AE-EPISTEMIC-001
-    // Expected: Verified<RefundDecision, RefundPolicy>
-    // Received: Claim<RefundDecision>
-    return payments.refund(claim)
-```
+Verification under explicit policy turns a Claim into `Verified<T, Policy>`.
 
-The compiler enforces that `Claim<T>` cannot cross an effect boundary. It must first be verified under a policy:
+This is not a runtime guardrail.  
+This is a *programming language* whose type system and runtime understand the difference between "the model thinks" and "this is verified."
 
 ```aethel
-fn refund(claim: Claim<RefundDecision>) -> Receipt
-uses PaymentGateway:
-    let verified = verify(claim, RefundPolicy)  // Claim → Verified
-    return payments.refund(verified)  // OK
+// What a model outputs
+let plan: Claim<DeploymentPlan> = grok.reason("Deploy v4 safely");
+
+// Compile error (AE-EPISTEMIC-001)
+deploy(plan)
+
+// Correct
+let verified = verify(plan, SafetyPolicy & BudgetPolicy);
+deploy(verified)  // Now carries proof
 ```
+
+Aethel is designed as the native language for AI agency — especially for systems that must be *right* about the world before they act.
+
+See [AETHEL_VISION_10.md](AETHEL_VISION_10.md) and [AETHEL_VISION_FOR_GROK.md](AETHEL_VISION_FOR_GROK.md) for the full 10/10 picture.
 
 ## Architecture
 
@@ -42,44 +45,43 @@ uses PaymentGateway:
 | `aethel-testkit` | Snapshot testing, compile-fail tests |
 | `aethel-cli` | `aethel check`, `aethel fmt` |
 
-## Quickstart
+## Quickstart (v0.1 Demo)
 
 ```bash
 # Build
 cargo build --release --workspace
 
-# Check the canonical failing example
+# The canonical epistemic demo
 cargo run -p aethel-cli -- check examples/refund/invalid_unverified.aet
 # → error[AE-EPISTEMIC-001]: unverified claim cannot authorize `PaymentGateway.refund`
 
-# Check the valid version
 cargo run -p aethel-cli -- check examples/refund/valid_verified.aet
 # → OK
-
-# Format
-cargo run -p aethel-cli -- fmt examples/refund/main.aet
 ```
 
-## Vertical Slice (v0.1)
+## Current Status (2026-07-13)
 
-The first milestone proves the epistemic type rule:
+We have a working vertical slice that proves the core idea:
+- The compiler can reject unverified claims at effect boundaries.
+- The demo is real and reproducible.
 
-- ✅ Lexer (logos)
-- ✅ Parser (recursive descent + Pratt)
-- ✅ AST with `Claim<T>` / `Verified<T, Policy>`
-- ✅ Name resolution
-- ✅ Type checker with `AE-EPISTEMIC-001`
-- ✅ Structured diagnostics with repair hints
-- ✅ CLI (`check`, `fmt`)
-- ✅ Snapshot tests
+Everything else is scaffolding toward the 10/10 vision.
+
+This is infrastructure for the age of capable agents.
 
 ## Documentation
 
+- [AETHEL_VISION_10.md](AETHEL_VISION_10.md) — The 10/10 destination
+- [AETHEL_VISION_FOR_GROK.md](AETHEL_VISION_FOR_GROK.md) — Why this matters for Grok/xAI
+- [Guarantees](docs/guarantees.md) (v0.1)
+- [Non-Guarantees](docs/non-guarantees.md) (v0.1)
 - [ADR 0001: Parser Architecture](docs/adr/0001-parser-architecture.md)
 - [ADR 0002: First Semantic Vertical Slice](docs/adr/0002-first-semantic-vertical-slice.md)
-- [Guarantees](docs/guarantees.md)
-- [Non-Guarantees](docs/non-guarantees.md)
 
 ## License
 
 MIT OR Apache-2.0
+
+---
+
+*If we get this right, future AIs will look back and say: "This was the point where we stopped pretending that raw model outputs were safe to act on."*

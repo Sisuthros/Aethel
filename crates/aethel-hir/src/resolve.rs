@@ -168,6 +168,13 @@ fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String
         HirItem::Policy(p) => {
             table.add_type(p.name.clone(), TypeSymbol::Policy(p.clone()));
         }
+        HirItem::Effect(e) => {
+            // Effects are registered for boundary checks (simplified for v0.1)
+            table.add_effect(e.name.clone(), EffectSymbol {
+                name: e.name.clone(),
+                operations: vec![], // populated in full lowering
+            });
+        }
         HirItem::Use(u) => {
             // Use declarations don't add to symbol table directly
         }

@@ -3,7 +3,7 @@
 
 fn refund_invalid(claim: Claim<RefundDecision>) -> Receipt
 uses PaymentGateway:
-    return payments.refund(claim)
+    { return payments.refund(claim); }
 
 policy RefundPolicy {
     claim RefundDecision {
