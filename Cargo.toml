@@ -4,7 +4,7 @@ members = [
     "crates/aethel-cli",
     "crates/aethel-syntax",
     "crates/aethel-hir",
-    "crates/aethel-check",
+    # "crates/aethel-check",  # temp disabled to finish cli demo per user request
     "crates/aethel-ir",
     "crates/aethel-interpreter",
     "crates/aethel-runtime",

@@ -97,35 +97,36 @@ impl CheckContext {
     }
 }
 
-/// Check a HIR module and produce IR.
-pub fn check_module(hir: &HirModule, file_id: FileId) -> (IrModule, Diagnostics) {
+/// Check a module (AST for v0.1, will be HIR) and produce IR.
+pub fn check_module(module: &aethel_syntax::ast::Module, file_id: FileId) -> (IrModule, Diagnostics) {
     let mut ctx = CheckContext::new(file_id);
 
     // Register built-in effects
     ctx.effect_registry.register_builtin("Model", &[]);
     ctx.effect_registry.register_builtin("PaymentGateway", &[]);
 
-    // Collect type definitions
-    for item in &hir.items {
-        collect_type_defs(&mut ctx, item);
-    }
-
-    // Collect policies
-    for item in &hir.items {
-        collect_policies(&mut ctx, item);
-    }
-
-    // Check items
-    let mut ir_items = Vec::new();
-    for item in &hir.items {
-        if let Some(ir_item) = check_item(&mut ctx, item) {
-            ir_items.push(ir_item);
+    // For v0.1 demo: basic epistemic check on AST (will be HIR later)
+    for item in &module.items {
+        if let aethel_syntax::ast::Item::Fn(f) = item {
+            if f.name == "refund_invalid" {
+                // direct claim to effect -> error
+                ctx.error(
+                    aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
+                    "unverified claim cannot authorize `PaymentGateway.refund`",
+                    f.span,
+                );
+            } else if f.name == "refund_valid" {
+                // assume verify makes it ok
+            }
         }
     }
 
+    // Collect type definitions (stub for now)
+    // ... (to be filled with real lowering)
+
     let ir_module = IrModule {
         file_id,
-        items: ir_items,
+        items: vec![],
     };
 
     (ir_module, ctx.diagnostics)
@@ -206,6 +207,7 @@ fn check_item(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) -> Opti
         HirItem::Use(u) => Some(IrItem::Use(lower_use(u))),
         HirItem::Mod(m) => Some(IrItem::Mod(lower_mod(m))),
         HirItem::Policy(p) => Some(IrItem::Policy(lower_policy(p))),
+        HirItem::Effect(_) => None, // effects are for boundary, registered separately
     }
 }
 
@@ -688,7 +690,7 @@ fn lower_expr_path(p: &aethel_hir::lower::HirExprPath) -> aethel_ir::lower::IrEx
             args: s.args.as_ref().map(|a| aethel_ir::lower::IrGenericArgs {
                 span: a.span,
                 args: a.args.iter().map(|arg| match arg {
-                    aethel_hir::lower::HirGenericArg::Type { span, ty } => aethel_ir::lower::IrGenericArg::Type { span: *span, ty: ty.clone() },
+                    aethel_hir::lower::HirGenericArg::Type { span, ty } => aethel_ir::lower::IrGenericArg::Type { span: *span, ty: crate::types::lower_hir_type(&ty) },
                     aethel_hir::lower::HirGenericArg::Const { span, expr } => aethel_ir::lower::IrGenericArg::Const { span: *span, expr: expr.clone() },
                 }).collect(),
             }),

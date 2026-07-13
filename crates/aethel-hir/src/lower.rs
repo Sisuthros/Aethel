@@ -20,6 +20,7 @@ pub enum HirItem {
     Use(HirUseDecl),
     Mod(HirModDecl),
     Policy(HirPolicyDef),
+    Effect(HirEffectDef),
 }
 
 /// Lowered function definition.
@@ -399,6 +400,22 @@ pub struct HirPolicyDef {
     pub generics: Vec<HirGenericParam>,
     pub claims: Vec<HirPolicyClaim>,
     pub is_pub: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HirEffectDef {
+    pub span: Span,
+    pub name: String,
+    pub operations: Vec<HirEffectOperation>,
+    pub is_pub: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HirEffectOperation {
+    pub span: Span,
+    pub name: String,
+    pub params: Vec<HirParam>,
+    pub ret_type: Option<HirType>,
 }
 
 #[derive(Debug, Clone)]

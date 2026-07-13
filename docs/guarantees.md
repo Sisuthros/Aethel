@@ -1,6 +1,6 @@
-# Aethel Core v0.1 Guarantees
+# Aethel Guarantees (Aspirational 10/10)
 
-This document enumerates the guarantees that Aethel Core v0.1 provides **and has machine-checked tests for**.
+This document enumerates the guarantees that the **full Aethel language** (the 10/10 vision) aims to provide, with v0.1 as the first step toward them. These are the invariants we will hold sacred as we build the real language for trustworthy AI agency.
 
 ## G1: Epistemic Type Safety
 **Claim<T> cannot be used where Verified<T, Policy> is required.**

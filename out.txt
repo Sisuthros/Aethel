@@ -1,0 +1,88 @@
+   Compiling aethel-syntax v0.1.0 (C:\Users\Ismael\aethel\crates\aethel-syntax)
+warning: unused import: `indexmap::IndexMap`
+ --> crates\aethel-syntax\src\ast.rs:4:5
+  |
+4 | use indexmap::IndexMap;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `smallvec::SmallVec`
+ --> crates\aethel-syntax\src\ast.rs:6:5
+  |
+6 | use smallvec::SmallVec;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ColorChoice`
+ --> crates\aethel-syntax\src\diagnostic.rs:5:43
+  |
+5 | use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+  |                                           ^^^^^^^^^^^
+
+warning: unused import: `DiagnosticSeverity`
+ --> crates\aethel-syntax\src\parser.rs:4:51
+  |
+4 | use crate::diagnostic::{codes, DiagnosticBuilder, DiagnosticSeverity, Diagnostics};
+  |                                                   ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `indexmap::IndexMap`
+ --> crates\aethel-syntax\src\parser.rs:7:5
+  |
+7 | use indexmap::IndexMap;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `smallvec::SmallVec`
+ --> crates\aethel-syntax\src\parser.rs:8:5
+  |
+8 | use smallvec::SmallVec;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fmt`
+ --> crates\aethel-syntax\src\parser.rs:9:5
+  |
+9 | use std::fmt;
+  |     ^^^^^^^^
+
+error[E0004]: non-exhaustive patterns: `&TokenKind::KwEffect` not covered
+   --> crates\aethel-syntax\src\lexer.rs:194:15
+    |
+194 |         match self {
+    |               ^^^^ pattern `&TokenKind::KwEffect` not covered
+    |
+note: `TokenKind` defined here
+   --> crates\aethel-syntax\src\lexer.rs:9:10
+    |
+  9 | pub enum TokenKind {
+    |          ^^^^^^^^^
+...
+ 62 |     KwEffect,
+    |     -------- not covered
+    = note: the matched value is of type `&TokenKind`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+276 ~             TokenKind::Question => "?",
+277 ~             &TokenKind::KwEffect => todo!(),
+    |
+
+warning: unreachable pattern
+    --> crates\aethel-syntax\src\parser.rs:1116:31
+     |
+1114 |             TokenKind::Plus | TokenKind::Minus => Precedence::Term,
+     |                               ---------------- matches all the relevant values
+1115 |             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Factor,
+1116 |             TokenKind::Bang | TokenKind::Minus | TokenKind::Star => Precedence::Unary,
+     |                               ^^^^^^^^^^^^^^^^ no value can reach this
+     |
+     = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+    --> crates\aethel-syntax\src\parser.rs:1116:50
+     |
+1115 |             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Factor,
+     |             --------------- matches all the relevant values
+1116 |             TokenKind::Bang | TokenKind::Minus | TokenKind::Star => Precedence::Unary,
+     |                                                  ^^^^^^^^^^^^^^^ no value can reach this
+
+For more information about this error, try `rustc --explain E0004`.
+warning: `aethel-syntax` (lib) generated 9 warnings
+error: could not compile `aethel-syntax` (lib) due to 1 previous error; 9 warnings emitted
