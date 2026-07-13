@@ -447,10 +447,13 @@ fn resolve_expr(table: &mut SymbolTable, expr: &mut HirExpr, errors: &mut Vec<St
             resolve_type(table, output_ty, errors);
         }
         HirExpr::Verify { claim, policy, .. } => {
-            resolve_expr(table, claim, errors);
-            resolve_type_path(table, policy, errors);
-        }
-        HirExpr::CommitOnce { effect, args, .. } => {
+                    resolve_expr(table, claim, errors);
+                    resolve_type_path(table, policy, errors);
+                }
+                HirExpr::Reason { prompt, .. } => {
+                    // Reason is an AI primitive that generates a Claim<T> - no resolution needed for prompt
+                }
+                HirExpr::CommitOnce { effect, args, .. } => {
             resolve_effect_ref(table, effect, errors);
             for arg in args {
                 resolve_expr(table, arg, errors);

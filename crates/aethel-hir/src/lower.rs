@@ -178,6 +178,10 @@ pub enum HirExpr {
         claim: Box<HirExpr>,
         policy: HirTypePath,
     },
+    Reason {
+        span: Span,
+        prompt: String,
+    },
     CommitOnce {
         span: Span,
         effect: HirEffectRef,

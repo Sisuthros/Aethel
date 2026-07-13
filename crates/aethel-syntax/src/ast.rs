@@ -736,16 +736,20 @@ pub enum Expr {
         output_ty: Type,
     },
     Verify {
-        span: Span,
-        claim: Box<Expr>,
-        policy: TypePath,
-    },
-    CommitOnce {
-        span: Span,
-        effect: EffectRef,
-        args: Vec<Expr>,
-    },
-    New {
+            span: Span,
+            claim: Box<Expr>,
+            policy: TypePath,
+        },
+        Reason {
+            span: Span,
+            prompt: String,
+        },
+        CommitOnce {
+            span: Span,
+            effect: EffectRef,
+            args: Vec<Expr>,
+        },
+        New {
         span: Span,
         ty: Type,
         args: Vec<Expr>,
@@ -775,6 +779,7 @@ impl Spanned for Expr {
             Expr::Continue { span } => *span,
             Expr::Ask { span, .. } => *span,
             Expr::Verify { span, .. } => *span,
+            Expr::Reason { span, .. } => *span,
             Expr::CommitOnce { span, .. } => *span,
             Expr::New { span, .. } => *span,
         }

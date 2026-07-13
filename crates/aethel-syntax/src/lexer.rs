@@ -63,15 +63,17 @@ pub enum TokenKind {
     #[token("Receipt")]
     KwReceipt,
     #[token("Budget")]
-    KwBudget,
-    #[token("Context")]
-    KwContext,
-    #[token("TrustedRegion")]
-    KwTrustedRegion,
-    #[token("UntrustedRegion")]
-    KwUntrustedRegion,
-    #[token("assert")]
-    KwAssert,
+        KwBudget,
+        #[token("Context")]
+        KwContext,
+        #[token("TrustedRegion")]
+        KwTrustedRegion,
+        #[token("UntrustedRegion")]
+        KwUntrustedRegion,
+        #[token("assert")]
+        KwAssert,
+        #[token("reason")]
+        KwReason,
     #[token("SignedAttestation")]
     KwSignedAttestation,
     #[token("CryptographicProof")]
@@ -237,12 +239,13 @@ impl TokenKind {
             TokenKind::KwPolicy => "Policy",
             TokenKind::KwEffect => "effect",
             TokenKind::KwReceipt => "Receipt",
-            TokenKind::KwBudget => "Budget",
-            TokenKind::KwContext => "Context",
-            TokenKind::KwTrustedRegion => "TrustedRegion",
-            TokenKind::KwUntrustedRegion => "UntrustedRegion",
-            TokenKind::KwAssert => "assert",
-            TokenKind::KwSignedAttestation => "SignedAttestation",
+                        TokenKind::KwBudget => "Budget",
+                        TokenKind::KwContext => "Context",
+                        TokenKind::KwTrustedRegion => "TrustedRegion",
+                        TokenKind::KwUntrustedRegion => "UntrustedRegion",
+                        TokenKind::KwAssert => "assert",
+                        TokenKind::KwReason => "reason",
+                        TokenKind::KwSignedAttestation => "SignedAttestation",
             TokenKind::KwCryptographicProof => "CryptographicProof",
             TokenKind::KwAuditLog => "AuditLog",
             TokenKind::KwHumanReview => "HumanReview",

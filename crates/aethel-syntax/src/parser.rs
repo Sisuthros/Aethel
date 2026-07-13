@@ -112,9 +112,20 @@ impl<'a> Parser<'a> {
                     return Some(Item::Enum(self.parse_enum_def(is_pub, start)?));
                 }
 
-                // Check for receipt
+                // Check for receipt keyword as struct name
                 if self.check(TokenKind::KwReceipt) {
-                    return Some(Item::Struct(self.parse_struct_def(is_pub, start)?));
+                    let name_start = self.current_span();
+                    let receipt_token = self.current_token().clone();
+                    self.advance();
+                    let name = Ident::new(receipt_token.span, "Receipt");
+                    let end = self.current_span();
+                    return Some(Item::Struct(StructDef {
+                        span: start.merge(end),
+                        name,
+                        generics: Vec::new(),
+                        fields: Vec::new(),
+                        is_pub,
+                    }));
                 }
 
                 // Check for policy
@@ -467,9 +478,8 @@ impl<'a> Parser<'a> {
         self.eat(TokenKind::KwEffect);
         let name = self.parse_ident()?;
 
-        // optional generics, skip for v0.1 simplicity
+        // optional generics
         if self.eat(TokenKind::Lt) {
-            // consume generics for now
             while !self.check(TokenKind::Gt) && !self.is_at_end() {
                 let _ = self.parse_generic_param();
                 self.eat(TokenKind::Comma);
@@ -479,24 +489,68 @@ impl<'a> Parser<'a> {
 
         self.expect(TokenKind::LBrace, "expected `{` after effect name")?;
 
-        // For v0.1 demo, skip the effect body (operations parsed in full lowering later)
-        let mut depth = 1;
-        while depth > 0 && !self.is_at_end() {
-            if self.eat(TokenKind::LBrace) {
-                depth += 1;
-            } else if self.eat(TokenKind::RBrace) {
-                depth -= 1;
-            } else {
-                self.advance();
+        // Parse effect operations (each starts with `fn`)
+        let mut operations = Vec::new();
+        while !self.check(TokenKind::RBrace) && !self.is_at_end() {
+            // Consume whitespace/newlines between operations
+            if self.eat(TokenKind::Semi) {
+                continue;
             }
+            
+            // Each operation starts with `fn`
+            if !self.check(TokenKind::KwFn) {
+                // Skip unexpected token inside effect body
+                self.advance();
+                continue;
+            }
+            
+            let op_start = self.current_span();
+            self.eat(TokenKind::KwFn);
+            let op_name = self.parse_ident()?;
+            
+            // Parameters
+            self.expect(TokenKind::LParen, "expected `(` after operation name")?;
+            let mut params = Vec::new();
+            while !self.check(TokenKind::RParen) && !self.is_at_end() {
+                let param_start = self.current_span();
+                let is_mut = self.eat(TokenKind::KwMut);
+                let param_name = self.parse_ident()?;
+                self.expect(TokenKind::Colon, "expected `:` after parameter name")?;
+                let ty = self.parse_type()?;
+                self.eat(TokenKind::Comma);
+                let param_end = self.previous_span();
+                params.push(Param {
+                    span: param_start.merge(param_end),
+                    name: param_name,
+                    ty,
+                    is_mut,
+                });
+            }
+            self.expect(TokenKind::RParen, "expected `)`")?;
+            
+            // Return type
+            let ret_type = if self.eat(TokenKind::Arrow) {
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            
+            let op_end = self.previous_span();
+            operations.push(EffectOperation {
+                span: op_start.merge(op_end),
+                name: op_name,
+                params,
+                ret_type,
+            });
         }
+        
+        self.expect(TokenKind::RBrace, "expected `}`")?;
 
         let end = self.previous_span();
-        // Return a stub EffectDef (operations not needed for demo check)
         Some(EffectDef {
             span: start.merge(end),
             name,
-            operations: vec![],
+            operations,
             is_pub,
         })
     }
