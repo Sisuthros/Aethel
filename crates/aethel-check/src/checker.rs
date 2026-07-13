@@ -97,32 +97,19 @@ impl CheckContext {
     }
 }
 
-/// Check a module (AST for v0.1, will be HIR) and produce IR.
+/// Check a module and produce IR with full type checking.
+/// Uses type structure (Claim<T> vs Verified<T, Policy>) not function names.
 pub fn check_module(module: &aethel_syntax::ast::Module, file_id: FileId) -> (IrModule, Diagnostics) {
     let mut ctx = CheckContext::new(file_id);
 
-    // Register built-in effects
-    ctx.effect_registry.register_builtin("Model", &[]);
-    ctx.effect_registry.register_builtin("PaymentGateway", &[]);
-
-    // For v0.1 demo: basic epistemic check on AST (will be HIR later)
-    for item in &module.items {
-        if let aethel_syntax::ast::Item::Fn(f) = item {
-            if f.name == "refund_invalid" {
-                // direct claim to effect -> error
-                ctx.error(
-                    aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
-                    "unverified claim cannot authorize `PaymentGateway.refund`",
-                    f.span,
-                );
-            } else if f.name == "refund_valid" {
-                // assume verify makes it ok
-            }
-        }
-    }
-
-    // Collect type definitions (stub for now)
-    // ... (to be filled with real lowering)
+    // Phase 1: Collect effect definitions from source declarations
+    collect_effect_defs_from_source(&mut ctx, module);
+    // Phase 2: Collect policy definitions from source declarations
+    collect_policy_defs_from_source(&mut ctx, module);
+    // Phase 3: Collect struct/type definitions from source
+    collect_type_defs_from_source(&mut ctx, module);
+    // Phase 4: Type-check each function body
+    check_function_bodies(&mut ctx, module);
 
     let ir_module = IrModule {
         file_id,
@@ -130,6 +117,358 @@ pub fn check_module(module: &aethel_syntax::ast::Module, file_id: FileId) -> (Ir
     };
 
     (ir_module, ctx.diagnostics)
+}
+
+/// Collect effect definitions from source AST items.
+fn collect_effect_defs_from_source(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
+    for item in &module.items {
+        if let aethel_syntax::ast::Item::Effect(e) = item {
+            let ops: Vec<aethel_effects::EffectOperation> = e.operations.iter().map(|op| {
+                aethel_effects::EffectOperation {
+                    name: op.name.name.clone(),
+                    params: op.params.iter().map(|p| aethel_effects::EffectParam {
+                        name: p.name.name.clone(),
+                        ty: ir_type_from_ast_type(&p.ty),
+                    }).collect(),
+                    ret_type: op.ret_type.as_ref().map(|t| ir_type_from_ast_type(t)),
+                }
+            }).collect();
+            
+            ctx.effect_registry.effects.insert(e.name.name.clone(), aethel_effects::EffectDefinition {
+                name: e.name.name.clone(),
+                operations: ops,
+            });
+        }
+    }
+}
+
+/// Collect policy definitions from source.
+fn collect_policy_defs_from_source(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
+    for item in &module.items {
+        if let aethel_syntax::ast::Item::Policy(p) = item {
+            let mut claims = IndexMap::new();
+            for claim in &p.claims {
+                let evidence: Vec<EvidenceKind> = claim.evidence.iter().map(|e| match &e.kind {
+                    aethel_syntax::ast::EvidenceKind::SignedAttestation => EvidenceKind::SignedAttestation,
+                    aethel_syntax::ast::EvidenceKind::CryptographicProof => EvidenceKind::CryptographicProof,
+                    aethel_syntax::ast::EvidenceKind::AuditLog => EvidenceKind::AuditLog,
+                    aethel_syntax::ast::EvidenceKind::HumanReview => EvidenceKind::HumanReview,
+                    aethel_syntax::ast::EvidenceKind::Custom(s) => EvidenceKind::Custom(s.clone()),
+                }).collect();
+                claims.insert(claim.name.name.clone(), PolicyClaim {
+                    ty: ir_type_from_ast_type(&claim.ty),
+                    evidence,
+                });
+            }
+            ctx.policy_registry.policies.insert(p.name.name.clone(), PolicyDefinition {
+                name: p.name.name.clone(),
+                claims,
+            });
+        }
+    }
+}
+
+/// Collect struct/type definitions from source.
+fn collect_type_defs_from_source(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
+    for item in &module.items {
+        if let aethel_syntax::ast::Item::Struct(s) = item {
+            let mut fields = IndexMap::new();
+            for field in &s.fields {
+                fields.insert(field.name.name.clone(), ir_type_from_ast_type(&field.ty));
+            }
+            ctx.type_env.type_defs.insert(s.name.name.clone(), TypeDefinition {
+                kind: TypeDefKind::Struct { fields },
+                generics: s.generics.iter().map(|g| g.name.name.clone()).collect(),
+            });
+        }
+    }
+}
+
+/// Convert an AST type to a display string for diagnostics.
+fn ast_type_to_string(ty: &aethel_syntax::ast::Type) -> String {
+    use aethel_syntax::ast::Type;
+    match ty {
+        Type::Unit { .. } => "()".to_string(),
+        Type::Never { .. } => "!".to_string(),
+        Type::Bool { .. } => "bool".to_string(),
+        Type::Int { .. } => "int".to_string(),
+        Type::Float { .. } => "float".to_string(),
+        Type::String { .. } => "string".to_string(),
+        Type::Path { path, .. } => path.segments.iter().map(|s| s.name.name.clone()).collect::<Vec<_>>().join("::"),
+        Type::Owned { ty, .. } => format!("owned {}", ast_type_to_string(ty)),
+        Type::Ref { ty, .. } => format!("&{}", ast_type_to_string(ty)),
+        Type::Claim { ty, .. } => format!("Claim<{}>", ast_type_to_string(ty)),
+        Type::Verified { ty, policy, .. } => format!("Verified<{}, {}>", ast_type_to_string(ty), ast_type_to_string(policy)),
+        Type::Tuple { types, .. } => format!("({})", types.iter().map(ast_type_to_string).collect::<Vec<_>>().join(", ")),
+        Type::Array { ty, .. } => format!("[{}]", ast_type_to_string(ty)),
+        Type::Fn { params, ret, .. } => format!("fn({}) -> {}", params.iter().map(ast_type_to_string).collect::<Vec<_>>().join(", "), ast_type_to_string(ret)),
+    }
+}
+
+/// Convert AST type to IR type for type env
+fn ir_type_from_ast_type(ty: &aethel_syntax::ast::Type) -> IrType {
+    use aethel_syntax::ast::Type;
+    let span = ty.span();
+    match ty {
+        Type::Unit { .. } => IrType::Unit { span },
+        Type::Never { .. } => IrType::Never { span },
+        Type::Bool { .. } => IrType::Bool { span },
+        Type::Int { .. } => IrType::Int { span },
+        Type::Float { .. } => IrType::Float { span },
+        Type::String { .. } => IrType::String { span },
+        Type::Path { path, .. } => {
+            let name = path.segments.first().map(|s| s.name.name.clone()).unwrap_or_default();
+            IrType::Path { span, path: IrTypePath {
+                span,
+                segments: vec![IrPathSegment { span, name, args: None }],
+            }}
+        }
+        Type::Owned { ty, .. } => IrType::Owned { span, ty: Box::new(ir_type_from_ast_type(ty)) },
+        Type::Ref { ty, is_mut, .. } => IrType::Ref { span, is_mut: *is_mut, ty: Box::new(ir_type_from_ast_type(ty)) },
+        Type::Claim { ty, .. } => IrType::Claim { span, ty: Box::new(ir_type_from_ast_type(ty)) },
+        Type::Verified { ty, policy, .. } => IrType::Verified { span, ty: Box::new(ir_type_from_ast_type(ty)), policy: Box::new(ir_type_from_ast_type(policy)) },
+        Type::Tuple { types, .. } => IrType::Tuple { span, types: types.iter().map(ir_type_from_ast_type).collect() },
+        Type::Array { ty, .. } => IrType::Array { span, ty: Box::new(ir_type_from_ast_type(ty)), size: None },
+        Type::Fn { params, ret, .. } => IrType::Fn { span, params: params.iter().map(ir_type_from_ast_type).collect(), ret: Box::new(ir_type_from_ast_type(ret)), effects: crate::types::lower_effect_set(&aethel_hir::lower::HirEffectSet { span: aethel_syntax::span::Span::new(FileId::new(0), aethel_syntax::span::ByteOffset(0), aethel_syntax::span::ByteOffset(0)), effects: vec![] }) },
+    }
+}
+
+/// Check function bodies for epistemic violations based on TYPES, not names.
+fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
+    use aethel_syntax::ast::{Item, Expr, Stmt, Type};
+
+    // Helper: check if an expression type contains Claim<T>
+    fn is_claim_type(ty: &Type) -> bool {
+        matches!(ty, Type::Claim { .. })
+    }
+
+    fn is_verified_type(ty: &Type) -> bool {
+        matches!(ty, Type::Verified { .. })
+    }
+
+    // Helper: extract effect name and operation from a method call pattern
+    // e.g. `payments.refund(claim)` → ("PaymentGateway", "refund")
+    fn extract_effect_op(expr: &Expr) -> Option<(String, String)> {
+        if let Expr::MethodCall { receiver, method, .. } = expr {
+            if let Expr::Path { path, .. } = receiver.as_ref() {
+                let receiver_name = path.segments.first()?.name.name.clone();
+                return Some((receiver_name, method.name.clone()));
+            }
+        }
+        None
+    }
+
+    // Helper: check if a path refers to an effect in scope
+    fn is_effect_ref(effects: &[aethel_syntax::ast::EffectRef], name: &str) -> bool {
+        effects.iter().any(|e| {
+            e.path.segments.first().map(|s| s.name.name.as_str() == name).unwrap_or(false)
+        })
+    }
+
+    for item in &module.items {
+        if let Item::Fn(f) = item {
+            // Collect parameter types into scope
+            let mut local_types: IndexMap<String, IrType> = IndexMap::new();
+            for param in &f.params {
+                local_types.insert(param.name.name.clone(), ir_type_from_ast_type(&param.ty));
+            }
+
+            // Walk body statements looking for epistemic violations
+            if let Some(body) = &f.body {
+                check_block_for_epistemic_violations(ctx, body, &f.effects.effects, &local_types);
+            }
+        }
+    }
+}
+
+fn check_block_for_epistemic_violations(
+    ctx: &mut CheckContext,
+    block: &aethel_syntax::ast::Block,
+    declared_effects: &[aethel_syntax::ast::EffectRef],
+    local_types: &IndexMap<String, IrType>,
+) {
+    use aethel_syntax::ast::{Stmt, Expr};
+
+    // Check all statements
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Expr { expr, .. } => {
+                check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+            }
+            Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+                }
+            }
+            Stmt::Let { init, .. } => {
+                if let Some(init) = init {
+                    check_expr_for_epistemic_violations(ctx, init, declared_effects, local_types);
+                }
+            }
+            Stmt::If { cond, then_branch, else_branch, .. } => {
+                check_expr_for_epistemic_violations(ctx, cond, declared_effects, local_types);
+                check_block_for_epistemic_violations(ctx, then_branch, declared_effects, local_types);
+                if let Some(else_stmt) = else_branch {
+                    check_stmt_for_epistemic_violations(ctx, else_stmt, declared_effects, local_types);
+                }
+            }
+            Stmt::While { cond, body, .. } => {
+                check_expr_for_epistemic_violations(ctx, cond, declared_effects, local_types);
+                check_block_for_epistemic_violations(ctx, body, declared_effects, local_types);
+            }
+            Stmt::Block { block, .. } => {
+                check_block_for_epistemic_violations(ctx, block, declared_effects, local_types);
+            }
+            _ => {}
+        }
+    }
+
+    // Check tail expression
+    if let Some(tail) = &block.tail {
+        check_expr_for_epistemic_violations(ctx, tail, declared_effects, local_types);
+    }
+}
+
+fn check_stmt_for_epistemic_violations(
+    ctx: &mut CheckContext,
+    stmt: &aethel_syntax::ast::Stmt,
+    declared_effects: &[aethel_syntax::ast::EffectRef],
+    local_types: &IndexMap<String, IrType>,
+) {
+    use aethel_syntax::ast::Stmt;
+    match stmt {
+        Stmt::Expr { expr, .. } => {
+            check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+        }
+        Stmt::Block { block, .. } => {
+            check_block_for_epistemic_violations(ctx, block, declared_effects, local_types);
+        }
+        _ => {}
+    }
+}
+
+fn check_expr_for_epistemic_violations(
+    ctx: &mut CheckContext,
+    expr: &aethel_syntax::ast::Expr,
+    declared_effects: &[aethel_syntax::ast::EffectRef],
+    local_types: &IndexMap<String, IrType>,
+) {
+    use aethel_syntax::ast::Expr;
+
+    match expr {
+        Expr::MethodCall { receiver, method, args, span } => {
+            // Check if this is a method call on an effect reference
+            if let Expr::Path { path, .. } = receiver.as_ref() {
+                if let Some(receiver_name) = path.segments.first().map(|s| s.name.name.as_str()) {
+                    if is_effect_ref(declared_effects, receiver_name) {
+                        // This is a method call on a declared effect
+                        // Look up the effect operation signature to check argument types
+                        if let Some(effect_def) = ctx.effect_registry.get(receiver_name) {
+                            if let Some(op) = effect_def.operations.iter().find(|o| o.name == method.name) {
+                                // Check each argument against the operation's parameter types
+                                for (i, arg) in args.iter().enumerate() {
+                                    if i < op.params.len() {
+                                        let param_ty = &op.params[i];
+                                        // Check if param type requires Verified<T, Policy>
+                                        let needs_verified = matches!(param_ty.ty, aethel_ir::lower::IrType::Verified { .. });
+                                        if needs_verified {
+                                            if let Expr::Path { path: arg_path, .. } = arg {
+                                                if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
+                                                    if let Some(resolved_ty) = local_types.get(arg_name) {
+                                                        if matches!(resolved_ty, IrType::Claim { .. }) {
+                                                            // EPISTEMIC VIOLATION: Claim<T> passed where Verified<T, Policy> expected
+                                                            ctx.error(
+                                                                aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
+                                                                &format!(
+                                                                    "unverified claim cannot authorize `{}.{}`",
+                                                                    receiver_name, method.name
+                                                                ),
+                                                                *span,
+                                                            );
+                                                            // Add help note
+                                                            ctx.note(
+                                                                aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
+                                                                &format!(
+                                                                    "expected `Verified<...>`, found `{}`\nuse `verify({}, <policy>)` before crossing the effect boundary",
+                                                                    ast_type_to_string(&aethel_syntax::ast::Type::Path {
+                                                                        span: *span,
+                                                                        path: aethel_syntax::ast::TypePath {
+                                                                            span: *span,
+                                                                            segments: vec![aethel_syntax::ast::PathSegment {
+                                                                                span: *span,
+                                                                                name: aethel_syntax::ast::Ident::new(*span, "Claim"),
+                                                                                args: None,
+                                                                            }],
+                                                                        },
+                                                                    }),
+                                                                    arg_name
+                                                                ),
+                                                                *span,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Unknown operation on declared effect
+                                ctx.error(
+                                    aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
+                                    &format!("unknown operation `{}` on effect `{}`", method.name, receiver_name),
+                                    *span,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Recurse into sub-expressions
+            check_expr_for_epistemic_violations(ctx, receiver, declared_effects, local_types);
+            for arg in args {
+                check_expr_for_epistemic_violations(ctx, arg, declared_effects, local_types);
+            }
+        }
+        Expr::Block { block, .. } => {
+            check_block_for_epistemic_violations(ctx, block, declared_effects, local_types);
+        }
+        Expr::Call { callee, args, .. } => {
+            check_expr_for_epistemic_violations(ctx, callee, declared_effects, local_types);
+            for arg in args {
+                check_expr_for_epistemic_violations(ctx, arg, declared_effects, local_types);
+            }
+        }
+        Expr::If { cond, then_branch, else_branch, .. } => {
+            check_expr_for_epistemic_violations(ctx, cond, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, then_branch, declared_effects, local_types);
+            if let Some(else_branch) = else_branch {
+                check_expr_for_epistemic_violations(ctx, else_branch, declared_effects, local_types);
+            }
+        }
+        Expr::Let { init, .. } => {
+            check_expr_for_epistemic_violations(ctx, init, declared_effects, local_types);
+        }
+        Expr::Return { expr, .. } => {
+            if let Some(expr) = expr {
+                check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+            }
+        }
+        Expr::Tuple { exprs, .. } => {
+            for e in exprs {
+                check_expr_for_epistemic_violations(ctx, e, declared_effects, local_types);
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            check_expr_for_epistemic_violations(ctx, left, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, right, declared_effects, local_types);
+        }
+        Expr::Unary { expr, .. } => {
+            check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+        }
+        _ => {}
+    }
 }
 
 fn collect_type_defs(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) {
@@ -448,42 +787,67 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                 output_ty: crate::types::lower_hir_type(&output_ty),
             })
         }
-        HirExpr::Verify { claim, policy, .. } => {
-            // EPISTEMIC TYPE RULE: Claim<T> -> Verified<T, Policy>
-            // This is where AE-EPISTEMIC-001 is enforced
-            let claim_expr = check_expr(ctx, claim)?;
-            let claim_ty = claim_expr.ty();
+        HirExpr::Verify { span, claim, policy } => {
+                    // EPISTEMIC TYPE RULE: Claim<T> -> Verified<T, Policy>
+                    // This is where AE-EPISTEMIC-001 is enforced
+                    let claim_expr = check_expr(ctx, claim)?;
+                    let claim_ty = claim_expr.ty();
             
-            // Check if claim is Claim<T>
-            if let aethel_ir::lower::IrType::Claim { ty: inner, .. } = &claim_ty {
-                // This is a Claim<T> - need to verify it produces Verified<T, Policy>
-                // The verify expression itself should produce Verified<T, Policy>
-                Some(IrExpr::Verify {
-                    span,
-                    claim: Box::new(claim_expr),
-                    policy: lower_type_path(policy),
-                })
-            } else {
-                // Not a Claim - error
-                ctx.error(
-                    aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED,
-                    "expected `Claim<T>` as argument to `verify`",
-                    claim_expr.span(),
-                );
-                Some(IrExpr::Verify {
-                    span,
-                    claim: Box::new(claim_expr),
-                    policy: lower_type_path(policy),
-                })
-            }
-        }
-        HirExpr::CommitOnce { effect, args, .. } => {
-            Some(IrExpr::CommitOnce {
-                span,
-                effect: lower_effect_ref(effect),
-                args: args.iter().map(|a| check_expr(ctx, a)).collect::<Option<Vec<_>>>()?,
-            })
-        }
+                    // Check if claim is Claim<T>
+                    if let aethel_ir::lower::IrType::Claim { ty: inner, .. } = &claim_ty {
+                        // This is a Claim<T> - need to verify it produces Verified<T, Policy>
+                        // The verify expression itself should produce Verified<T, Policy>
+                        Some(IrExpr::Verify {
+                            span,
+                            claim: Box::new(claim_expr),
+                            policy: lower_type_path(policy),
+                        })
+                    } else {
+                        // Not a Claim - error
+                        ctx.error(
+                            aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED,
+                            "expected `Claim<T>` as argument to `verify`",
+                            claim_expr.span(),
+                        );
+                        Some(IrExpr::Verify {
+                            span,
+                            claim: Box::new(claim_expr),
+                            policy: lower_type_path(policy),
+                        })
+                    }
+                }
+                HirExpr::Reason { span, prompt } => {
+                    // AI primitive that generates a Claim<T> - always produces Claim<String> or Claim<T>
+                    // The actual type depends on the context, but it's fundamentally an untrusted claim
+                    Some(IrExpr::Reason {
+                        span,
+                        prompt: prompt.clone(),
+                    })
+                }
+                HirExpr::CommitOnce { effect, args, .. } => {
+                            // EPISTEMIC TYPE RULE: Effects require Verified<T, Policy> arguments, not raw Claim<T>
+                            let ir_args: Option<Vec<_>> = args.iter().map(|a| check_expr(ctx, a)).collect();
+                            let ir_args = ir_args?;
+
+                            // Verify that all arguments to effects are Verified<T, Policy>, not raw Claim<T>
+                            for arg in &ir_args {
+                                let arg_ty = arg.ty();
+                                if matches!(arg_ty, aethel_ir::lower::IrType::Claim { .. }) {
+                                    ctx.error(
+                                        aethel_syntax::diagnostic::codes::EPISTEMIC_UNVERIFIED_EFFECT(),
+                                        "Cannot pass an unverified `Claim<T>` to an Effect. It must be verified first.",
+                                        *span,
+                                    );
+                                    return None;
+                                }
+                            }
+
+                            Some(IrExpr::CommitOnce {
+                                span,
+                                effect: lower_effect_ref(effect),
+                                args: ir_args,
+                            })
+                        }
         HirExpr::New { ty, args, .. } => {
             Some(IrExpr::New {
                 span,
