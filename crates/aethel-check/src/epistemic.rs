@@ -193,7 +193,7 @@ fn types_equal(a: &IrType, b: &IrType) -> bool {
 
 fn type_paths_equal(a: &IrTypePath, b: &IrTypePath) -> bool {
     a.segments.len() == b.segments.len() && a.segments.iter().zip(&b.segments).all(|(sa, sb)| {
-        sa.name == sb.name && sa.args.as_ref().map(|aa| sb.args.as_ref().map(|ab| generic_args_equal(aa, ab))).unwrap_or(sb.args.is_none()) == true
+        sa.name == sb.name && sa.args.is_some() && sb.args.is_some() && generic_args_equal(sa.args.as_ref().unwrap(), sb.args.as_ref().unwrap())
     })
 }
 
@@ -228,7 +228,7 @@ fn literal_equal(a: &IrLiteral, b: &IrLiteral) -> bool {
 
 fn expr_paths_equal(a: &IrExprPath, b: &IrExprPath) -> bool {
     a.segments.len() == b.segments.len() && a.segments.iter().zip(&b.segments).all(|(sa, sb)| {
-        sa.name == sb.name && sa.args.as_ref().map(|aa| sb.args.as_ref().map(|ab| generic_args_equal(aa, ab))).unwrap_or(sb.args.is_none()) == true
+        sa.name == sb.name && sa.args.is_some() && sb.args.is_some() && generic_args_equal(sa.args.as_ref().unwrap(), sb.args.as_ref().unwrap())
     })
 }
 
