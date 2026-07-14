@@ -306,19 +306,21 @@ fn check_block_for_epistemic_violations(
                 }
             }
             Stmt::Let { name, ty, init, is_mut, span } => {
-                let resolved_ty = if let Some(ty) = ty {
-                    ir_type_from_ast_type(ty)
+                let inferred_ty = if let Some(init) = init {
+                    let inferred = infer_expr_return_type(ctx, init, declared_effects);
+                    // Check the init expression for epistemic violations
+                    check_expr_for_epistemic_violations(ctx, init, declared_effects);
+                    inferred
                 } else {
-                    IrType::Unit { span: *span }
+                    None
                 };
+                let resolved_ty = inferred_ty.or_else(|| ty.as_ref().map(|t| ir_type_from_ast_type(t)))
+                    .unwrap_or(IrType::Unit { span: *span });
                 ctx.type_env.add_variable(name.name.clone(), VariableInfo {
                     ty: resolved_ty,
                     is_mut: *is_mut,
                     is_linear: false,
                 });
-                if let Some(init) = init {
-                    check_expr_for_epistemic_violations(ctx, init, declared_effects);
-                }
             }
             Stmt::If { cond, then_branch, else_branch, .. } => {
                 check_expr_for_epistemic_violations(ctx, cond, declared_effects);
@@ -470,6 +472,102 @@ fn check_expr_for_epistemic_violations(
             check_expr_for_epistemic_violations(ctx, expr, declared_effects);
         }
         _ => {}
+    }
+}
+
+/// Infer the return type of an expression for type environment tracking.
+/// This enables `let x = verify(claim, Policy)` to give x the Verified type.
+fn infer_expr_return_type(
+    ctx: &mut CheckContext,
+    expr: &aethel_syntax::ast::Expr,
+    declared_effects: &[aethel_syntax::ast::EffectRef],
+) -> Option<IrType> {
+    use aethel_syntax::ast::Expr;
+    match expr {
+        // verify(claim, Policy) -> Verified<T, Policy>
+        Expr::Verify { claim, policy, span } => {
+            // Get the inner type T from Claim<T>
+            if let Expr::Path { path: claim_path, .. } = claim.as_ref() {
+                if let Some(claim_name) = claim_path.segments.first().map(|s| s.name.name.as_str()) {
+                    if let Some(var_info) = ctx.type_env.get_variable(claim_name) {
+                        if let IrType::Claim { ty: inner_ty, .. } = &var_info.ty {
+                            // Build Verified<T, Policy>
+                            let policy_path = policy.segments.first()
+                                .map(|s| s.name.name.clone())
+                                .unwrap_or_default();
+                            let policy_ir = IrType::Path {
+                                span: *span,
+                                path: IrTypePath {
+                                    span: *span,
+                                    segments: vec![IrPathSegment {
+                                        span: *span,
+                                        name: policy_path,
+                                        args: None,
+                                    }],
+                                },
+                            };
+                            return Some(IrType::Verified {
+                                span: *span,
+                                ty: inner_ty.clone(),
+                                policy: Box::new(policy_ir),
+                            });
+                        }
+                    }
+                }
+            }
+            // Fallback: Verified<_, _>
+            let default_policy = policy.segments.first()
+                .map(|s| s.name.name.clone())
+                .unwrap_or_default();
+            Some(IrType::Verified {
+                span: *span,
+                ty: Box::new(IrType::Path {
+                    span: *span,
+                    path: IrTypePath {
+                        span: *span,
+                        segments: vec![IrPathSegment {
+                            span: *span,
+                            name: "unknown".to_string(),
+                            args: None,
+                        }],
+                    },
+                }),
+                policy: Box::new(IrType::Path {
+                    span: *span,
+                    path: IrTypePath {
+                        span: *span,
+                        segments: vec![IrPathSegment {
+                            span: *span,
+                            name: default_policy,
+                            args: None,
+                        }],
+                    },
+                }),
+            })
+        }
+        // Method calls on effects: look up return type from effect registry
+        Expr::MethodCall { receiver, method, span, .. } => {
+            let receiver_name = if let Expr::Path { path, .. } = receiver.as_ref() {
+                path.segments.first().map(|s| s.name.name.as_str())
+            } else {
+                None
+            };
+            receiver_name.and_then(|rname| {
+                // Look up the effect operation return type
+                // Check declared effects first, then registered
+                let is_declared = declared_effects.iter().any(|e| {
+                    e.path.segments.first().map(|s| s.name.name.as_str() == rname).unwrap_or(false)
+                });
+                if !is_declared {
+                    return None;
+                }
+                ctx.effect_registry.get(rname).and_then(|ef| {
+                    ef.operations.iter().find(|o| o.name == method.name)
+                        .and_then(|op| op.ret_type.clone())
+                })
+            })
+        }
+        _ => None,
     }
 }
 
