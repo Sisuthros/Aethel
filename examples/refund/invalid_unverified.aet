@@ -6,7 +6,7 @@ uses PaymentGateway:
     { return payments.refund(claim); }
 
 policy RefundPolicy {
-    claim RefundDecision {
+    RefundDecision: RefundDecision {
         evidence SignedAttestation "Merchant signed refund authorization"
     }
 }
