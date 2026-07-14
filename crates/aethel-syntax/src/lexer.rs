@@ -56,32 +56,10 @@ pub enum TokenKind {
     KwClaim,
     #[token("Verified")]
     KwVerified,
-    #[token("Policy")]
+    #[token("policy")]
     KwPolicy,
     #[token("effect")]
     KwEffect,
-    #[token("Receipt")]
-    KwReceipt,
-    #[token("Budget")]
-        KwBudget,
-        #[token("Context")]
-        KwContext,
-        #[token("TrustedRegion")]
-        KwTrustedRegion,
-        #[token("UntrustedRegion")]
-        KwUntrustedRegion,
-        #[token("assert")]
-        KwAssert,
-        #[token("reason")]
-        KwReason,
-    #[token("SignedAttestation")]
-    KwSignedAttestation,
-    #[token("CryptographicProof")]
-    KwCryptographicProof,
-    #[token("AuditLog")]
-    KwAuditLog,
-    #[token("HumanReview")]
-    KwHumanReview,
     #[token("break")]
     KwBreak,
     #[token("continue")]
@@ -236,19 +214,8 @@ impl TokenKind {
             TokenKind::KwOnce => "once",
             TokenKind::KwClaim => "Claim",
             TokenKind::KwVerified => "Verified",
-            TokenKind::KwPolicy => "Policy",
+            TokenKind::KwPolicy => "policy",
             TokenKind::KwEffect => "effect",
-            TokenKind::KwReceipt => "Receipt",
-                        TokenKind::KwBudget => "Budget",
-                        TokenKind::KwContext => "Context",
-                        TokenKind::KwTrustedRegion => "TrustedRegion",
-                        TokenKind::KwUntrustedRegion => "UntrustedRegion",
-                        TokenKind::KwAssert => "assert",
-                        TokenKind::KwReason => "reason",
-                        TokenKind::KwSignedAttestation => "SignedAttestation",
-            TokenKind::KwCryptographicProof => "CryptographicProof",
-            TokenKind::KwAuditLog => "AuditLog",
-            TokenKind::KwHumanReview => "HumanReview",
             TokenKind::KwBreak => "break",
             TokenKind::KwContinue => "continue",
             TokenKind::KwNew => "new",
@@ -364,9 +331,9 @@ mod tests {
 
     #[test]
     fn test_lex_keywords() {
-        let source = "fn let mut return owned if else while for in match type struct enum use mod pub uses ask verify commit once Claim Verified Policy effect Receipt Budget Context TrustedRegion UntrustedRegion assert SignedAttestation CryptographicProof AuditLog HumanReview break continue new";
+        let source = "fn let mut return owned if else while for in match type struct enum use mod pub uses ask verify commit once Claim Verified policy effect break continue new";
         let tokens = lex(source, FileId::new(0));
-        assert_eq!(tokens.len(), 39); // 39 keywords
+        assert_eq!(tokens.len(), 29); // 29 keywords
     }
 
     #[test]

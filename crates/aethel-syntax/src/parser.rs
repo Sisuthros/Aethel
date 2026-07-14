@@ -108,27 +108,11 @@ impl<'a> Parser<'a> {
         }
 
         // Check for enum
-                if self.check(TokenKind::KwEnum) {
-                    return Some(Item::Enum(self.parse_enum_def(is_pub, start)?));
-                }
+        if self.check(TokenKind::KwEnum) {
+            return Some(Item::Enum(self.parse_enum_def(is_pub, start)?));
+        }
 
-                // Check for receipt keyword as struct name
-                if self.check(TokenKind::KwReceipt) {
-                    let name_start = self.current_span();
-                    let receipt_token = self.current_token().clone();
-                    self.advance();
-                    let name = Ident::new(receipt_token.span, "Receipt");
-                    let end = self.current_span();
-                    return Some(Item::Struct(StructDef {
-                        span: start.merge(end),
-                        name,
-                        generics: Vec::new(),
-                        fields: Vec::new(),
-                        is_pub,
-                    }));
-                }
-
-                // Check for policy
+        // Check for policy
         if self.check(TokenKind::KwPolicy) || self.check(TokenKind::KwClaim) {
             return Some(Item::Policy(self.parse_policy_def(is_pub, start)?));
         }
@@ -396,7 +380,7 @@ impl<'a> Parser<'a> {
 
         if is_claim {
             // Handle `Claim<T>` as a type, not a policy definition
-            // This should not be parsed as an item
+            // `claim` (lowercase) could start a standalone policy beginning with `claim`
             self.error(
                 codes::PARSE_ERROR(),
                 "`Claim` is a type, not a standalone definition",
@@ -556,16 +540,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_evidence_kind(&mut self) -> Option<EvidenceKind> {
-        if self.eat(TokenKind::KwSignedAttestation) {
-            Some(EvidenceKind::SignedAttestation)
-        } else if self.eat(TokenKind::KwCryptographicProof) {
-            Some(EvidenceKind::CryptographicProof)
-        } else if self.eat(TokenKind::KwAuditLog) {
-            Some(EvidenceKind::AuditLog)
-        } else if self.eat(TokenKind::KwHumanReview) {
-            Some(EvidenceKind::HumanReview)
-        } else if let Some(s) = self.parse_custom_evidence() {
-            Some(EvidenceKind::Custom(s))
+        // Evidence kinds are now parsed as identifiers (not dedicated keywords)
+        if let Some(ident) = self.parse_optional_ident() {
+            match ident.name.as_str() {
+                "SignedAttestation" => Some(EvidenceKind::SignedAttestation),
+                "CryptographicProof" => Some(EvidenceKind::CryptographicProof),
+                "AuditLog" => Some(EvidenceKind::AuditLog),
+                "HumanReview" => Some(EvidenceKind::HumanReview),
+                s => Some(EvidenceKind::Custom(s.to_string())),
+            }
         } else {
             self.error(
                 codes::PARSE_ERROR(),
@@ -575,11 +558,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_custom_evidence(&mut self) -> Option<String> {
+    fn parse_optional_ident(&mut self) -> Option<Ident> {
         if let TokenKind::Ident(name) = &self.current_token().kind {
-            let name = name.clone();
+            let span = self.current_token().span;
+            let ident = Ident::new(span, name.clone());
             self.advance();
-            Some(name)
+            Some(ident)
         } else {
             None
         }
@@ -748,7 +732,6 @@ impl<'a> Parser<'a> {
                                 | TokenKind::KwAsk
                                 | TokenKind::KwVerify
                                 | TokenKind::KwCommit
-                                | TokenKind::KwAssert
                         )
                     })));
 
@@ -1831,22 +1814,6 @@ impl<'a> Parser<'a> {
                         params,
                         ret: Box::new(ret),
                         effects,
-                    });
-                }
-
-                // Receipt type (keyword that can be used as a type name)
-                if self.eat(TokenKind::KwReceipt) {
-                    let end = self.previous_span();
-                    return Some(Type::Path {
-                        span: start.merge(end),
-                        path: TypePath {
-                            span: start.merge(end),
-                            segments: vec![PathSegment {
-                                span: start.merge(end),
-                                name: Ident::new(start.merge(end), "Receipt"),
-                                args: None,
-                            }],
-                        },
                     });
                 }
 
