@@ -18,11 +18,37 @@ pub struct CheckContext {
     pub policy_registry: PolicyRegistry,
 }
 
-/// Type environment for checking.
+/// Type environment for checking with proper scoping.
 #[derive(Debug, Default)]
 pub struct TypeEnvironment {
     pub variables: IndexMap<String, VariableInfo>,
     pub type_defs: IndexMap<String, TypeDefinition>,
+    pub scopes: Vec<Vec<String>>,
+}
+
+impl TypeEnvironment {
+    pub fn enter_scope(&mut self) {
+        self.scopes.push(Vec::new());
+    }
+
+    pub fn exit_scope(&mut self) {
+        if let Some(scope) = self.scopes.pop() {
+            for name in scope {
+                self.variables.shift_remove(&name);
+            }
+        }
+    }
+
+    pub fn add_variable(&mut self, name: String, info: VariableInfo) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.push(name.clone());
+        }
+        self.variables.insert(name, info);
+    }
+
+    pub fn get_variable(&self, name: &str) -> Option<&VariableInfo> {
+        self.variables.get(name)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -240,13 +266,22 @@ fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Mo
 
     for item in &module.items {
         if let Item::Fn(f) = item {
-            let mut local_types: IndexMap<String, IrType> = IndexMap::new();
+            ctx.type_env.enter_scope();
+            // Add parameters to type environment
             for param in &f.params {
-                local_types.insert(param.name.name.clone(), ir_type_from_ast_type(&param.ty));
+                ctx.type_env.add_variable(
+                    param.name.name.clone(),
+                    VariableInfo {
+                        ty: ir_type_from_ast_type(&param.ty),
+                        is_mut: param.is_mut,
+                        is_linear: false,
+                    },
+                );
             }
             if let Some(body) = &f.body {
-                check_block_for_epistemic_violations(ctx, body, &f.effects.effects, &local_types);
+                check_block_for_epistemic_violations(ctx, body, &f.effects.effects);
             }
+            ctx.type_env.exit_scope();
         }
     }
 }
@@ -255,39 +290,49 @@ fn check_block_for_epistemic_violations(
     ctx: &mut CheckContext,
     block: &aethel_syntax::ast::Block,
     declared_effects: &[aethel_syntax::ast::EffectRef],
-    local_types: &IndexMap<String, IrType>,
 ) {
     use aethel_syntax::ast::{Stmt, Expr};
+    ctx.type_env.enter_scope();
 
     // Check all statements
     for stmt in &block.stmts {
         match stmt {
             Stmt::Expr { expr, .. } => {
-                check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
             Stmt::Return { expr, .. } => {
                 if let Some(expr) = expr {
-                    check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+                    check_expr_for_epistemic_violations(ctx, expr, declared_effects);
                 }
             }
-            Stmt::Let { init, .. } => {
+            Stmt::Let { name, ty, init, is_mut, span } => {
+                let resolved_ty = if let Some(ty) = ty {
+                    ir_type_from_ast_type(ty)
+                } else {
+                    IrType::Unit { span: *span }
+                };
+                ctx.type_env.add_variable(name.name.clone(), VariableInfo {
+                    ty: resolved_ty,
+                    is_mut: *is_mut,
+                    is_linear: false,
+                });
                 if let Some(init) = init {
-                    check_expr_for_epistemic_violations(ctx, init, declared_effects, local_types);
+                    check_expr_for_epistemic_violations(ctx, init, declared_effects);
                 }
             }
             Stmt::If { cond, then_branch, else_branch, .. } => {
-                check_expr_for_epistemic_violations(ctx, cond, declared_effects, local_types);
-                check_block_for_epistemic_violations(ctx, then_branch, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, cond, declared_effects);
+                check_block_for_epistemic_violations(ctx, then_branch, declared_effects);
                 if let Some(else_stmt) = else_branch {
-                    check_stmt_for_epistemic_violations(ctx, else_stmt, declared_effects, local_types);
+                    check_stmt_for_epistemic_violations(ctx, else_stmt, declared_effects);
                 }
             }
             Stmt::While { cond, body, .. } => {
-                check_expr_for_epistemic_violations(ctx, cond, declared_effects, local_types);
-                check_block_for_epistemic_violations(ctx, body, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, cond, declared_effects);
+                check_block_for_epistemic_violations(ctx, body, declared_effects);
             }
             Stmt::Block { block, .. } => {
-                check_block_for_epistemic_violations(ctx, block, declared_effects, local_types);
+                check_block_for_epistemic_violations(ctx, block, declared_effects);
             }
             _ => {}
         }
@@ -295,23 +340,23 @@ fn check_block_for_epistemic_violations(
 
     // Check tail expression
     if let Some(tail) = &block.tail {
-        check_expr_for_epistemic_violations(ctx, tail, declared_effects, local_types);
+        check_expr_for_epistemic_violations(ctx, tail, declared_effects);
     }
+    ctx.type_env.exit_scope();
 }
 
 fn check_stmt_for_epistemic_violations(
     ctx: &mut CheckContext,
     stmt: &aethel_syntax::ast::Stmt,
     declared_effects: &[aethel_syntax::ast::EffectRef],
-    local_types: &IndexMap<String, IrType>,
 ) {
     use aethel_syntax::ast::Stmt;
     match stmt {
         Stmt::Expr { expr, .. } => {
-            check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, expr, declared_effects);
         }
         Stmt::Block { block, .. } => {
-            check_block_for_epistemic_violations(ctx, block, declared_effects, local_types);
+            check_block_for_epistemic_violations(ctx, block, declared_effects);
         }
         _ => {}
     }
@@ -321,7 +366,6 @@ fn check_expr_for_epistemic_violations(
     ctx: &mut CheckContext,
     expr: &aethel_syntax::ast::Expr,
     declared_effects: &[aethel_syntax::ast::EffectRef],
-    local_types: &IndexMap<String, IrType>,
 ) {
     use aethel_syntax::ast::Expr;
 
@@ -367,8 +411,8 @@ fn check_expr_for_epistemic_violations(
                         if needs_verified {
                             if let Expr::Path { path: arg_path, .. } = arg {
                                 if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
-                                    if let Some(resolved_ty) = local_types.get(arg_name) {
-                                        if matches!(resolved_ty, IrType::Claim { .. }) {
+                                    if let Some(var_info) = ctx.type_env.get_variable(arg_name) {
+                                        if matches!(var_info.ty, IrType::Claim { .. }) {
                                             ctx.error(
                                                 aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
                                                 &format!("unverified claim cannot authorize `{}.{}`", receiver_name.unwrap_or("?"), method.name),
@@ -384,46 +428,46 @@ fn check_expr_for_epistemic_violations(
             }
 
             // Recurse into sub-expressions
-            check_expr_for_epistemic_violations(ctx, receiver, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, receiver, declared_effects);
             for arg in args {
-                check_expr_for_epistemic_violations(ctx, arg, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, arg, declared_effects);
             }
         }
         Expr::Block { block, .. } => {
-            check_block_for_epistemic_violations(ctx, block, declared_effects, local_types);
+            check_block_for_epistemic_violations(ctx, block, declared_effects);
         }
         Expr::Call { callee, args, .. } => {
-            check_expr_for_epistemic_violations(ctx, callee, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, callee, declared_effects);
             for arg in args {
-                check_expr_for_epistemic_violations(ctx, arg, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, arg, declared_effects);
             }
         }
         Expr::If { cond, then_branch, else_branch, .. } => {
-            check_expr_for_epistemic_violations(ctx, cond, declared_effects, local_types);
-            check_expr_for_epistemic_violations(ctx, then_branch, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, cond, declared_effects);
+            check_expr_for_epistemic_violations(ctx, then_branch, declared_effects);
             if let Some(else_branch) = else_branch {
-                check_expr_for_epistemic_violations(ctx, else_branch, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, else_branch, declared_effects);
             }
         }
         Expr::Let { init, .. } => {
-            check_expr_for_epistemic_violations(ctx, init, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, init, declared_effects);
         }
         Expr::Return { expr, .. } => {
             if let Some(expr) = expr {
-                check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
         }
         Expr::Tuple { exprs, .. } => {
             for e in exprs {
-                check_expr_for_epistemic_violations(ctx, e, declared_effects, local_types);
+                check_expr_for_epistemic_violations(ctx, e, declared_effects);
             }
         }
         Expr::Binary { left, right, .. } => {
-            check_expr_for_epistemic_violations(ctx, left, declared_effects, local_types);
-            check_expr_for_epistemic_violations(ctx, right, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, left, declared_effects);
+            check_expr_for_epistemic_violations(ctx, right, declared_effects);
         }
         Expr::Unary { expr, .. } => {
-            check_expr_for_epistemic_violations(ctx, expr, declared_effects, local_types);
+            check_expr_for_epistemic_violations(ctx, expr, declared_effects);
         }
         _ => {}
     }
@@ -1087,18 +1131,7 @@ fn lower_binary_op(op: &aethel_hir::lower::HirBinaryOp) -> aethel_ir::lower::IrB
     }
 }
 
-// Extend TypeEnvironment with scope management
-impl TypeEnvironment {
-    fn enter_scope(&mut self) {
-        self.variables = self.variables.clone();
-    }
-
-    fn exit_scope(&mut self) {
-        // In a real impl, we'd track scope depth
-    }
-}
-
-// Add ty() method to IrExpr for type inference
+// End of lower functions
 trait IrExprExt {
     fn ty(&self) -> aethel_ir::lower::IrType;
 }
