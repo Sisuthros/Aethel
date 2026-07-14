@@ -1,0 +1,16 @@
+fn process(claim: Claim<Data>) -> Receipt
+uses DataProcessor:
+    { return processor.handle(claim); }
+
+effect DataProcessor {
+    fn handle(data: Verified<Data, DataPolicy>) -> Receipt
+}
+
+policy DataPolicy {
+    RequiredCheck: Data {
+        evidence SignedAttestation "Test"
+    }
+}
+
+struct Data { value: string }
+struct Receipt { id: string }

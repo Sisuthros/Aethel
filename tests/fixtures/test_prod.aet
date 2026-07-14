@@ -1,0 +1,16 @@
+fn deploy(model: Claim<ModelConfig>) -> Receipt
+uses ProductionDeploy:
+    { return deployer.release(model); }
+
+effect ProductionDeploy {
+    fn release(decision: Verified<ModelConfig, DeployPolicy>) -> Receipt
+}
+
+policy DeployPolicy {
+    RequiredCheck: ModelConfig {
+        evidence SignedAttestation "Test"
+    }
+}
+
+struct ModelConfig { version: string }
+struct Receipt { id: string }
