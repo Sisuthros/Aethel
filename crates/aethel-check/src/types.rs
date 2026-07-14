@@ -305,7 +305,7 @@ fn lower_binary_op(op: &HirBinaryOp) -> IrBinaryOp {
     }
 }
 
-fn lower_effect_set(e: &HirEffectSet) -> IrEffectSet {
+pub(crate) fn lower_effect_set(e: &HirEffectSet) -> IrEffectSet {
     IrEffectSet {
         span: e.span,
         effects: e.effects.iter().map(lower_effect_ref).collect(),
@@ -348,6 +348,7 @@ impl HirExprSpan for HirExpr {
             Continue { span } => *span,
             Ask { span, .. } => *span,
             Verify { span, .. } => *span,
+            Reason { span, .. } => *span,
             CommitOnce { span, .. } => *span,
             New { span, .. } => *span,
         }

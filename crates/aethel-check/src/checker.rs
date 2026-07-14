@@ -1,7 +1,7 @@
 //! Main type checker orchestration.
 
 use aethel_hir::lower::HirModule;
-use aethel_ir::lower::{IrModule, IrType};
+use aethel_ir::lower::{IrModule, IrType, IrTypePath, IrPathSegment, IrGenericArgs, IrGenericArg};
 use aethel_syntax::diagnostic::{Diagnostics, DiagnosticCode, DiagnosticSeverity};
 use aethel_syntax::span::{FileId, Span};
 use aethel_effects::EffectRegistry;
@@ -92,7 +92,7 @@ impl CheckContext {
 
     pub fn note(&mut self, code: DiagnosticCode, message: &str, span: Span) {
         use aethel_syntax::diagnostic::DiagnosticBuilder;
-        let diag = DiagnosticBuilder::note(code, message).primary_label(span, "here").build();
+        let diag = DiagnosticBuilder::note_severity(code, message).primary_label(span, "here").build();
         self.diagnostics.push(diag);
     }
 }
@@ -208,6 +208,7 @@ fn ast_type_to_string(ty: &aethel_syntax::ast::Type) -> String {
 /// Convert AST type to IR type for type env
 fn ir_type_from_ast_type(ty: &aethel_syntax::ast::Type) -> IrType {
     use aethel_syntax::ast::Type;
+    use aethel_syntax::span::Spanned;
     let span = ty.span();
     match ty {
         Type::Unit { .. } => IrType::Unit { span },
@@ -235,55 +236,20 @@ fn ir_type_from_ast_type(ty: &aethel_syntax::ast::Type) -> IrType {
 
 /// Check function bodies for epistemic violations based on TYPES, not names.
 fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
-    use aethel_syntax::ast::{Item, Expr, Stmt, Type};
+    use aethel_syntax::ast::Item;
 
-    // Helper: check if an expression type contains Claim<T>
-    fn is_claim_type(ty: &Type) -> bool {
-        matches!(ty, Type::Claim { .. })
-    }
-
-    fn is_verified_type(ty: &Type) -> bool {
-        matches!(ty, Type::Verified { .. })
-    }
-
-    // Helper: extract effect name and operation from a method call pattern
-    // e.g. `payments.refund(claim)` → ("PaymentGateway", "refund")
-    fn extract_effect_op(expr: &Expr) -> Option<(String, String)> {
-        if let Expr::MethodCall { receiver, method, .. } = expr {
-            if let Expr::Path { path, .. } = receiver.as_ref() {
-                let receiver_name = path.segments.first()?.name.name.clone();
-                return Some((receiver_name, method.name.clone()));
+    for item in &module.items {
+        if let Item::Fn(f) = item {
+            let mut local_types: IndexMap<String, IrType> = IndexMap::new();
+            for param in &f.params {
+                local_types.insert(param.name.name.clone(), ir_type_from_ast_type(&param.ty));
+            }
+            if let Some(body) = &f.body {
+                check_block_for_epistemic_violations(ctx, body, &f.effects.effects, &local_types);
             }
         }
-        fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
-            use aethel_syntax::ast::{Item, Expr, Stmt, Type};
-            eprintln!("DEBUG check_function_bodies called with {} items", module.items.len());
-
-            // Helper: check if a path refers to an effect in scope
-            fn is_effect_ref(effects: &[aethel_syntax::ast::EffectRef], name: &str) -> bool {
-                effects.iter().any(|e| {
-                    e.path.segments.first().map(|s| s.name.name.as_str() == name).unwrap_or(false)
-                })
-            }
-
-            for item in &module.items {
-                if let Item::Fn(f) = item {
-                    eprintln!("DEBUG checking function: {}", f.name.name);
-                    // Collect parameter types into scope
-                    let mut local_types: IndexMap<String, IrType> = IndexMap::new();
-                    for param in &f.params {
-                        eprintln!("DEBUG param {} has type {:?}", param.name.name, ir_type_from_ast_type(&param.ty));
-                        local_types.insert(param.name.name.clone(), ir_type_from_ast_type(&param.ty));
-                    }
-
-                    // Walk body statements looking for epistemic violations
-                    if let Some(body) = &f.body {
-                        eprintln!("DEBUG body has {} stmts, {:?} effects", body.stmts.len(), f.effects.effects.len());
-                        check_block_for_epistemic_violations(ctx, body, &f.effects.effects, &local_types);
-                    }
-                }
-            }
-        }
+    }
+}
 
 fn check_block_for_epistemic_violations(
     ctx: &mut CheckContext,
@@ -372,25 +338,30 @@ fn check_expr_for_epistemic_violations(
 
             // Check against ALL registered effects (not just declared)
             // This handles both `PaymentGateway.refund()` and `payments.refund()` patterns
-            let found_effect_op = receiver_name.and_then(|rname| {
-                // Try exact match first
-                if let Some(ef) = ctx.effect_registry.get(rname) {
-                    return ef.operations.iter().find(|o| o.name == method.name);
-                }
-                // Also iterate through all effects in case variable name differs
-                for (_, ef) in &ctx.effect_registry.effects {
-                    if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
-                        return Some(op);
+            let found_effect_op = {
+                let effect_registry = &ctx.effect_registry;
+                receiver_name.and_then(|rname| {
+                    if let Some(ef) = effect_registry.get(rname) {
+                        return ef.operations.iter().find(|o| o.name == method.name);
                     }
-                }
-                None
-            });
+                    for (_, ef) in &effect_registry.effects {
+                        if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
+                            return Some(op);
+                        }
+                    }
+                    None
+                })
+            };
 
             if let Some(op) = found_effect_op {
+                // Clone op details to avoid borrowing ctx twice
+                let op_params = op.params.clone();
+                let op_name = op.name.clone();
+                drop(found_effect_op);
                 // Check each argument against the operation's parameter types
                 for (i, arg) in args.iter().enumerate() {
-                    if i < op.params.len() {
-                        let param_ty = &op.params[i];
+                    if i < op_params.len() {
+                        let param_ty = &op_params[i];
                         // Check if param type requires Verified<T, Policy>
                         let needs_verified = matches!(param_ty.ty, aethel_ir::lower::IrType::Verified { .. });
                         if needs_verified {
@@ -398,49 +369,14 @@ fn check_expr_for_epistemic_violations(
                                 if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
                                     if let Some(resolved_ty) = local_types.get(arg_name) {
                                         if matches!(resolved_ty, IrType::Claim { .. }) {
-                                            // EPISTEMIC VIOLATION: Claim<T> passed where Verified<T, Policy> expected
                                             ctx.error(
                                                 aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
-                                                &format!(
-                                                    "unverified claim cannot authorize `{}.{}`",
-                                                    receiver_name.unwrap_or("?"), method.name
-                                                ),
+                                                &format!("unverified claim cannot authorize `{}.{}`", receiver_name.unwrap_or("?"), method.name),
                                                 *span,
                                             );
-                                                            // Add help note
-                                                            ctx.note(
-                                                                aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
-                                                                &format!(
-                                                                    "expected `Verified<...>`, found `{}`\nuse `verify({}, <policy>)` before crossing the effect boundary",
-                                                                    ast_type_to_string(&aethel_syntax::ast::Type::Path {
-                                                                        span: *span,
-                                                                        path: aethel_syntax::ast::TypePath {
-                                                                            span: *span,
-                                                                            segments: vec![aethel_syntax::ast::PathSegment {
-                                                                                span: *span,
-                                                                                name: aethel_syntax::ast::Ident::new(*span, "Claim"),
-                                                                                args: None,
-                                                                            }],
-                                                                        },
-                                                                    }),
-                                                                    arg_name
-                                                                ),
-                                                                *span,
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                 }
-                            } else {
-                                // Unknown operation on declared effect
-                                ctx.error(
-                                    aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
-                                    &format!("unknown operation `{}` on effect `{}`", method.name, receiver_name),
-                                    *span,
-                                );
                             }
                         }
                     }
@@ -858,7 +794,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                                     ctx.error(
                                         aethel_syntax::diagnostic::codes::EPISTEMIC_UNVERIFIED_EFFECT(),
                                         "Cannot pass an unverified `Claim<T>` to an Effect. It must be verified first.",
-                                        *span,
+                                        span,
                                     );
                                     return None;
                                 }
@@ -1011,7 +947,7 @@ fn lower_mod(m: &aethel_hir::lower::HirModDecl) -> aethel_ir::lower::IrModDecl {
         span: m.span,
         name: m.name.clone(),
         body: m.body.as_ref().map(|b| {
-            let (items, _) = crate::check_module(b, m.span.file);
+            let (items, _) = crate::checker::check_module(b, m.span.file);
             items
         }),
         is_pub: m.is_pub,
@@ -1215,6 +1151,7 @@ impl IrExprSpan for aethel_ir::lower::IrExpr {
             IrExpr::Continue { span } => *span,
             IrExpr::Ask { span, .. } => *span,
             IrExpr::Verify { span, .. } => *span,
+            IrExpr::Reason { span, .. } => *span,
             IrExpr::CommitOnce { span, .. } => *span,
             IrExpr::New { span, .. } => *span,
         }
