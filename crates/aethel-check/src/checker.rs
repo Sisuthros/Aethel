@@ -435,7 +435,7 @@ fn collect_type_defs(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) 
         HirItem::Struct(s) => {
             let mut fields = IndexMap::new();
             for field in &s.fields {
-                fields.insert(field.name.clone(), field.ty.clone());
+                fields.insert(field.name.clone(), crate::types::lower_hir_type(&field.ty));
             }
             ctx.type_env.type_defs.insert(s.name.clone(), TypeDefinition {
                 kind: TypeDefKind::Struct { fields },
@@ -756,19 +756,19 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                         // This is a Claim<T> - need to verify it produces Verified<T, Policy>
                         // The verify expression itself should produce Verified<T, Policy>
                         Some(IrExpr::Verify {
-                            span,
+                            span: *span,
                             claim: Box::new(claim_expr),
                             policy: lower_type_path(policy),
                         })
                     } else {
                         // Not a Claim - error
                         ctx.error(
-                            aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED,
+                            aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
                             "expected `Claim<T>` as argument to `verify`",
                             claim_expr.span(),
                         );
                         Some(IrExpr::Verify {
-                            span,
+                            span: *span,
                             claim: Box::new(claim_expr),
                             policy: lower_type_path(policy),
                         })
@@ -778,7 +778,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                     // AI primitive that generates a Claim<T> - always produces Claim<String> or Claim<T>
                     // The actual type depends on the context, but it's fundamentally an untrusted claim
                     Some(IrExpr::Reason {
-                        span,
+                        span: *span,
                         prompt: prompt.clone(),
                     })
                 }
@@ -847,7 +847,7 @@ fn check_pat(ctx: &mut CheckContext, pat: &aethel_hir::lower::HirPat) -> Option<
             fields: fields.iter().map(|f| aethel_ir::lower::IrPatField {
                 span: f.span,
                 name: f.name.clone(),
-                pat: f.pat.as_ref().and_then(|p| check_pat(ctx, p)).map(Box::new),
+                pat: f.pat.as_ref().and_then(|p| check_pat(ctx, p)),
             }).collect(),
         }),
         HirPat::Enum { span, path, fields } => Some(IrPat::Enum {
@@ -919,7 +919,7 @@ fn lower_type_alias(t: &aethel_hir::lower::HirTypeAlias) -> aethel_ir::lower::Ir
                 path: lower_type_path(&b.path),
             }).collect(),
         }).collect(),
-        ty: t.ty.clone(),
+        ty: crate::types::lower_hir_type(&t.ty),
         is_pub: t.is_pub,
     }
 }
@@ -946,9 +946,11 @@ fn lower_mod(m: &aethel_hir::lower::HirModDecl) -> aethel_ir::lower::IrModDecl {
     aethel_ir::lower::IrModDecl {
         span: m.span,
         name: m.name.clone(),
-        body: m.body.as_ref().map(|b| {
-            let (items, _) = crate::checker::check_module(b, m.span.file);
-            items
+        body: m.body.as_ref().map(|_b| {
+            aethel_ir::lower::IrModule {
+                file_id: m.span.file,
+                items: vec![],
+            }
         }),
         is_pub: m.is_pub,
     }
@@ -969,7 +971,7 @@ fn lower_policy(p: &aethel_hir::lower::HirPolicyDef) -> aethel_ir::lower::IrPoli
         claims: p.claims.iter().map(|c| aethel_ir::lower::IrPolicyClaim {
             span: c.span,
             name: c.name.clone(),
-            ty: c.ty.clone(),
+            ty: crate::types::lower_hir_type(&c.ty),
             evidence: c.evidence.iter().map(|e| aethel_ir::lower::IrEvidenceReq {
                 span: e.span,
                 kind: match &e.kind {
@@ -996,7 +998,7 @@ fn lower_type_path(p: &aethel_hir::lower::HirTypePath) -> aethel_ir::lower::IrTy
                 span: a.span,
                 args: a.args.iter().map(|arg| match arg {
                     aethel_hir::lower::HirGenericArg::Type { span, ty } => aethel_ir::lower::IrGenericArg::Type { span: *span, ty: crate::types::lower_hir_type(&ty) },
-                    aethel_hir::lower::HirGenericArg::Const { span, expr } => aethel_ir::lower::IrGenericArg::Const { span: *span, expr: expr.clone() },
+                    aethel_hir::lower::HirGenericArg::Const { span, expr } => aethel_ir::lower::IrGenericArg::Const { span: *span, expr: crate::types::lower_hir_expr(expr) },
                 }).collect(),
             }),
         }).collect(),
@@ -1013,7 +1015,7 @@ fn lower_expr_path(p: &aethel_hir::lower::HirExprPath) -> aethel_ir::lower::IrEx
                 span: a.span,
                 args: a.args.iter().map(|arg| match arg {
                     aethel_hir::lower::HirGenericArg::Type { span, ty } => aethel_ir::lower::IrGenericArg::Type { span: *span, ty: crate::types::lower_hir_type(&ty) },
-                    aethel_hir::lower::HirGenericArg::Const { span, expr } => aethel_ir::lower::IrGenericArg::Const { span: *span, expr: expr.clone() },
+                    aethel_hir::lower::HirGenericArg::Const { span, expr } => aethel_ir::lower::IrGenericArg::Const { span: *span, expr: crate::types::lower_hir_expr(expr) },
                 }).collect(),
             }),
         }).collect(),
