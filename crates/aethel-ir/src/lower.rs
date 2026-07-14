@@ -177,6 +177,10 @@ pub enum IrExpr {
         claim: Box<IrExpr>,
         policy: IrTypePath,
     },
+    Reason {
+        span: Span,
+        prompt: String,
+    },
     CommitOnce {
         span: Span,
         effect: IrEffectRef,
