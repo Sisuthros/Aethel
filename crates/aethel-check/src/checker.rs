@@ -255,31 +255,35 @@ fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Mo
                 return Some((receiver_name, method.name.clone()));
             }
         }
-        None
-    }
+        fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
+            use aethel_syntax::ast::{Item, Expr, Stmt, Type};
+            eprintln!("DEBUG check_function_bodies called with {} items", module.items.len());
 
-    // Helper: check if a path refers to an effect in scope
-    fn is_effect_ref(effects: &[aethel_syntax::ast::EffectRef], name: &str) -> bool {
-        effects.iter().any(|e| {
-            e.path.segments.first().map(|s| s.name.name.as_str() == name).unwrap_or(false)
-        })
-    }
-
-    for item in &module.items {
-        if let Item::Fn(f) = item {
-            // Collect parameter types into scope
-            let mut local_types: IndexMap<String, IrType> = IndexMap::new();
-            for param in &f.params {
-                local_types.insert(param.name.name.clone(), ir_type_from_ast_type(&param.ty));
+            // Helper: check if a path refers to an effect in scope
+            fn is_effect_ref(effects: &[aethel_syntax::ast::EffectRef], name: &str) -> bool {
+                effects.iter().any(|e| {
+                    e.path.segments.first().map(|s| s.name.name.as_str() == name).unwrap_or(false)
+                })
             }
 
-            // Walk body statements looking for epistemic violations
-            if let Some(body) = &f.body {
-                check_block_for_epistemic_violations(ctx, body, &f.effects.effects, &local_types);
+            for item in &module.items {
+                if let Item::Fn(f) = item {
+                    eprintln!("DEBUG checking function: {}", f.name.name);
+                    // Collect parameter types into scope
+                    let mut local_types: IndexMap<String, IrType> = IndexMap::new();
+                    for param in &f.params {
+                        eprintln!("DEBUG param {} has type {:?}", param.name.name, ir_type_from_ast_type(&param.ty));
+                        local_types.insert(param.name.name.clone(), ir_type_from_ast_type(&param.ty));
+                    }
+
+                    // Walk body statements looking for epistemic violations
+                    if let Some(body) = &f.body {
+                        eprintln!("DEBUG body has {} stmts, {:?} effects", body.stmts.len(), f.effects.effects.len());
+                        check_block_for_epistemic_violations(ctx, body, &f.effects.effects, &local_types);
+                    }
+                }
             }
         }
-    }
-}
 
 fn check_block_for_epistemic_violations(
     ctx: &mut CheckContext,
@@ -357,34 +361,52 @@ fn check_expr_for_epistemic_violations(
 
     match expr {
         Expr::MethodCall { receiver, method, args, span } => {
-            // Check if this is a method call on an effect reference
-            if let Expr::Path { path, .. } = receiver.as_ref() {
-                if let Some(receiver_name) = path.segments.first().map(|s| s.name.name.as_str()) {
-                    if is_effect_ref(declared_effects, receiver_name) {
-                        // This is a method call on a declared effect
-                        // Look up the effect operation signature to check argument types
-                        if let Some(effect_def) = ctx.effect_registry.get(receiver_name) {
-                            if let Some(op) = effect_def.operations.iter().find(|o| o.name == method.name) {
-                                // Check each argument against the operation's parameter types
-                                for (i, arg) in args.iter().enumerate() {
-                                    if i < op.params.len() {
-                                        let param_ty = &op.params[i];
-                                        // Check if param type requires Verified<T, Policy>
-                                        let needs_verified = matches!(param_ty.ty, aethel_ir::lower::IrType::Verified { .. });
-                                        if needs_verified {
-                                            if let Expr::Path { path: arg_path, .. } = arg {
-                                                if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
-                                                    if let Some(resolved_ty) = local_types.get(arg_name) {
-                                                        if matches!(resolved_ty, IrType::Claim { .. }) {
-                                                            // EPISTEMIC VIOLATION: Claim<T> passed where Verified<T, Policy> expected
-                                                            ctx.error(
-                                                                aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
-                                                                &format!(
-                                                                    "unverified claim cannot authorize `{}.{}`",
-                                                                    receiver_name, method.name
-                                                                ),
-                                                                *span,
-                                                            );
+            // Check if this is a method call on an effect
+            // First check if the receiver name matches a declared effect
+            // OR if any registered effect has this operation
+            let receiver_name = if let Expr::Path { path, .. } = receiver.as_ref() {
+                path.segments.first().map(|s| s.name.name.as_str())
+            } else {
+                None
+            };
+
+            // Check against ALL registered effects (not just declared)
+            // This handles both `PaymentGateway.refund()` and `payments.refund()` patterns
+            let found_effect_op = receiver_name.and_then(|rname| {
+                // Try exact match first
+                if let Some(ef) = ctx.effect_registry.get(rname) {
+                    return ef.operations.iter().find(|o| o.name == method.name);
+                }
+                // Also iterate through all effects in case variable name differs
+                for (_, ef) in &ctx.effect_registry.effects {
+                    if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
+                        return Some(op);
+                    }
+                }
+                None
+            });
+
+            if let Some(op) = found_effect_op {
+                // Check each argument against the operation's parameter types
+                for (i, arg) in args.iter().enumerate() {
+                    if i < op.params.len() {
+                        let param_ty = &op.params[i];
+                        // Check if param type requires Verified<T, Policy>
+                        let needs_verified = matches!(param_ty.ty, aethel_ir::lower::IrType::Verified { .. });
+                        if needs_verified {
+                            if let Expr::Path { path: arg_path, .. } = arg {
+                                if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
+                                    if let Some(resolved_ty) = local_types.get(arg_name) {
+                                        if matches!(resolved_ty, IrType::Claim { .. }) {
+                                            // EPISTEMIC VIOLATION: Claim<T> passed where Verified<T, Policy> expected
+                                            ctx.error(
+                                                aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
+                                                &format!(
+                                                    "unverified claim cannot authorize `{}.{}`",
+                                                    receiver_name.unwrap_or("?"), method.name
+                                                ),
+                                                *span,
+                                            );
                                                             // Add help note
                                                             ctx.note(
                                                                 aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
