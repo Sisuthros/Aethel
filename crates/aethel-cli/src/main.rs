@@ -28,6 +28,15 @@ enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
+    /// Evaluate a source file with the IR interpreter (run-to-completion)
+    Run {
+        /// Input file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Show full effect trace
+        #[arg(long)]
+        trace: bool,
+    },
     /// Format a source file
     Fmt {
         /// Input file
@@ -46,15 +55,15 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Check { file } => check_file(&file),
         Commands::EmitIr { file } => emit_ir(&file),
+        Commands::Run { file, trace } => run_file(&file, trace),
         Commands::Fmt { file, check } => fmt_file(&file, check),
     }
 }
 
-fn check_file(file: &PathBuf) -> anyhow::Result<()> {
+fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModule, FileId)> {
     let source = std::fs::read_to_string(file)?;
     let file_id = FileId::new(0);
 
-    // Real pipeline: source → lexer → parser → AST → check_module (HIR lowering + type check + IR)
     let tokens = lex(&source, file_id);
     let (module, parse_diagnostics) = parse(&tokens, file_id);
 
@@ -69,8 +78,7 @@ fn check_file(file: &PathBuf) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    // Real type checking via the checker pipeline
-    let (_ir, check_diagnostics) = check_module(&module, file_id);
+    let (ir_module, check_diagnostics) = check_module(&module, file_id);
 
     if check_diagnostics.has_errors() {
         eprintln!("{}", "Type errors:".red().bold());
@@ -92,6 +100,11 @@ fn check_file(file: &PathBuf) -> anyhow::Result<()> {
         println!("{} {}", "✓".green(), format!("{} type checks (with warnings)", file.display()).green());
     }
 
+    Ok((ir_module, file_id))
+}
+
+fn check_file(file: &PathBuf) -> anyhow::Result<()> {
+    compile_and_check(file)?;
     Ok(())
 }
 
@@ -220,6 +233,42 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
     });
 
     println!("{}", serde_json::to_string_pretty(&output)?);
+
+    Ok(())
+}
+
+fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
+    let (ir_module, _file_id) = compile_and_check(file)?;
+
+    let mut evaluator = aethel_interpreter::eval::Evaluator::new();
+    let result = evaluator.eval_module(&ir_module)?;
+
+    // Print results
+    println!();
+    println!("{}", "── Evaluation Results ──".bold());
+    println!("  {} claims processed", result.claim_count);
+    println!("  {} verified successfully", result.verified_count);
+
+    if result.policy_violations.is_empty() {
+        println!("  {} {}", "✓".green(), "No policy violations".green());
+    } else {
+        println!("  {} {} policy violation(s):", "✗".red().bold(), result.policy_violations.len());
+        for v in &result.policy_violations {
+            println!("    • {}", v.red());
+        }
+    }
+
+    if show_trace && !result.effect_trace.is_empty() {
+        println!();
+        println!("{}", "── Effect Trace ──".bold());
+        for (i, trace) in result.effect_trace.iter().enumerate() {
+            let status = if trace.was_verified { "✓".green() } else { "✗".red() };
+            println!("  {}. {} effect `{}`", i + 1, status, trace.effect_name);
+            if let Some(err) = &trace.error {
+                println!("     {}", err.yellow());
+            }
+        }
+    }
 
     Ok(())
 }
