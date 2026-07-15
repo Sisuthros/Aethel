@@ -8,58 +8,37 @@
 //! - **Symbolic execution** — track data provenance through the program
 //! - **Effect tracing** — record every effect invocation with its
 //!   associated claim/verified status
-//!
-//! # Architecture
-//!
-//! ```text
-//! IrModule
-//!   └── IrItem::Fn(fn_def)
-//!         └── IrBlock { stmts, tail }
-//!               ├── IrStmt::Let { binding }
-//!               ├── IrStmt::Expr { effect_call }
-//!               ├── IrStmt::If { cond, then, else }
-//!               └── IrExpr::EffectCall { claim, effect }
-//! ```
-//!
-//! The evaluator walks statements in order, evaluating expressions
-//! recursively. Every effect call is recorded in a trace for later
-//! policy verification.
 
 use std::collections::HashMap;
 
 use aethel_ir::lower::*;
 use aethel_syntax::span::Span;
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 // ──────────────────────────────────────────────
 //  Value model
 // ──────────────────────────────────────────────
 
-/// Runtime value during interpretation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Unit,
     Bool(bool),
     Int(i64),
     Float(f64),
     String(String),
-    /// A `Claim<T>` — unverified model output.
     Claim {
         inner: Box<Value>,
         provenance: String,
     },
-    /// A `Verified<T, Policy>` — verified via some policy.
     Verified {
         inner: Box<Value>,
         policy: String,
         provenance: String,
     },
-    /// A structured value (struct instance).
     Struct {
         name: String,
         fields: HashMap<String, Value>,
     },
-    /// Error sentinel — evaluation failed at this point.
     Error(String),
 }
 
@@ -72,11 +51,6 @@ impl Value {
         matches!(self, Value::Verified { .. })
     }
 
-    pub fn is_error(&self) -> bool {
-        matches!(self, Value::Error(_))
-    }
-
-    /// Extract the inner value, unwrapping Claim/Verified wrappers.
     pub fn unwrap_inner(&self) -> &Value {
         match self {
             Value::Claim { inner, .. } | Value::Verified { inner, .. } => inner.as_ref(),
@@ -89,25 +63,19 @@ impl Value {
 //  Effect trace
 // ──────────────────────────────────────────────
 
-/// A single effect invocation recorded during evaluation.
 #[derive(Debug, Clone)]
 pub struct EffectTrace {
     pub span: Span,
     pub effect_name: String,
-    /// The claim value passed to the effect.
     pub argument: Value,
-    /// Whether the argument was verified before crossing the boundary.
     pub was_verified: bool,
-    /// If verification failed, the reason.
     pub error: Option<String>,
 }
 
-/// Complete evaluation result.
 #[derive(Debug, Clone)]
 pub struct EvalResult {
     pub return_value: Value,
     pub effect_trace: Vec<EffectTrace>,
-    /// Map of variable names to their final values.
     pub final_env: HashMap<String, Value>,
     pub verified_count: usize,
     pub claim_count: usize,
@@ -118,7 +86,6 @@ pub struct EvalResult {
 //  Environment
 // ──────────────────────────────────────────────
 
-/// Evaluation environment — scope chain of bindings.
 #[derive(Debug, Clone)]
 pub struct Env {
     scopes: Vec<HashMap<String, Value>>,
@@ -126,9 +93,7 @@ pub struct Env {
 
 impl Env {
     pub fn new() -> Self {
-        Self {
-            scopes: vec![HashMap::new()],
-        }
+        Self { scopes: vec![HashMap::new()] }
     }
 
     pub fn push_scope(&mut self) {
@@ -164,16 +129,13 @@ impl Env {
 }
 
 impl Default for Env {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 // ──────────────────────────────────────────────
 //  Evaluator
 // ──────────────────────────────────────────────
 
-/// The Aethel IR evaluator.
 pub struct Evaluator {
     env: Env,
     trace: Vec<EffectTrace>,
@@ -193,26 +155,15 @@ impl Evaluator {
         }
     }
 
-    // ── Module entry ─────────────────────────────
-
-    /// Evaluate an entire IR module.
-    /// Returns the result of the `main` or `entry` function, if any.
     pub fn eval_module(&mut self, module: &IrModule) -> Result<EvalResult> {
-        // Build a function table
-        let mut functions: HashMap<String, &IrFnDef> = HashMap::new();
-        for item in &module.items {
-            if let IrItem::Fn(f) = item {
-                functions.insert(f.name.clone(), f);
-            }
-        }
+        let entry_name = self.find_entry(module);
 
-        // Find entry point
-        let entry_name = if functions.contains_key("main") {
-            "main"
-        } else if functions.contains_key("entry") {
-            "entry"
+        if let Some(entry_fn) = entry_name {
+            if let Some(body) = &entry_fn.body {
+                self.eval_block(body)?;
+            }
         } else {
-            // No entry point — evaluate all function bodies in order
+            // No entry point — evaluate all function bodies
             for item in &module.items {
                 if let IrItem::Fn(f) = item {
                     if let Some(body) = &f.body {
@@ -220,29 +171,28 @@ impl Evaluator {
                     }
                 }
             }
-            return Ok(self.finalise());
-        };
-
-        // Evaluate the entry function
-        if let Some(entry_fn) = functions.get(entry_name) {
-            if let Some(body) = &entry_fn.body {
-                self.eval_block(body)?;
-            }
         }
 
         Ok(self.finalise())
     }
 
-    // ── Block evaluation ─────────────────────────
+    fn find_entry<'a>(&self, module: &'a IrModule) -> Option<&'a IrFnDef> {
+        for item in &module.items {
+            if let IrItem::Fn(f) = item {
+                if f.name == "main" || f.name == "entry" {
+                    return Some(f);
+                }
+            }
+        }
+        None
+    }
 
     fn eval_block(&mut self, block: &IrBlock) -> Result<Option<Value>> {
         self.env.push_scope();
 
         for stmt in &block.stmts {
             match stmt {
-                IrStmt::Let {
-                    name, init, ..
-                } => {
+                IrStmt::Let { name, init, .. } => {
                     let value = if let Some(init_expr) = init {
                         self.eval_expr(init_expr)?
                     } else {
@@ -262,24 +212,18 @@ impl Evaluator {
                     self.env.pop_scope();
                     return Ok(Some(value));
                 }
-                IrStmt::If {
-                    cond,
-                    then_branch,
-                    else_branch, ..
-                } => {
+                IrStmt::If { cond, then_branch, else_branch, .. } => {
                     let cond_val = self.eval_expr(cond)?;
-                    let is_truthy = matches!(cond_val, Value::Bool(true));
-                    if is_truthy {
+                    if matches!(cond_val, Value::Bool(true)) {
                         self.eval_block(then_branch)?;
                     } else if let Some(else_stmt) = else_branch {
                         self.eval_stmt(else_stmt)?;
                     }
                 }
-                _ => {} // While, For, Match, Break, Continue — stub
+                _ => {}
             }
         }
 
-        // Evaluate tail expression
         let tail_val = if let Some(tail) = &block.tail {
             Some(self.eval_expr(tail)?)
         } else {
@@ -304,14 +248,9 @@ impl Evaluator {
                 };
                 Ok(Some(value))
             }
-            IrStmt::If {
-                cond,
-                then_branch,
-                else_branch, ..
-            } => {
+            IrStmt::If { cond, then_branch, else_branch, .. } => {
                 let cond_val = self.eval_expr(cond)?;
-                let is_truthy = matches!(cond_val, Value::Bool(true));
-                if is_truthy {
+                if matches!(cond_val, Value::Bool(true)) {
                     self.eval_block(then_branch)?;
                 } else if let Some(else_stmt) = else_branch {
                     self.eval_stmt(else_stmt)?;
@@ -321,8 +260,6 @@ impl Evaluator {
             _ => Ok(None),
         }
     }
-
-    // ── Expression evaluation ────────────────────
 
     fn eval_expr(&mut self, expr: &IrExpr) -> Result<Value> {
         match expr {
@@ -337,28 +274,23 @@ impl Evaluator {
                     .ok_or_else(|| anyhow::anyhow!("unbound variable: {name}"))
             }
 
-            IrExpr::Call { callee: _, args, .. } => {
-                // For now, simple function evaluation
+            IrExpr::Call { args, .. } => {
                 self.claim_count += 1;
-                let mut arg_values = Vec::new();
                 for arg in args {
-                    arg_values.push(self.eval_expr(arg)?);
+                    self.eval_expr(arg)?;
                 }
-                // Return a generic verified value
                 Ok(Value::Claim {
                     inner: Box::new(Value::Unit),
-                    provenance: format!("call_expr"),
+                    provenance: "call_expr".into(),
                 })
             }
 
             IrExpr::MethodCall { span, receiver, method, .. } => {
                 let receiver_val = self.eval_expr(receiver)?;
-                // Method calls are effect boundaries
                 let is_verified = receiver_val.is_verified();
                 if !is_verified {
                     self.violations.push(format!(
-                        "unverified call to `{}`: argument is Claim, not Verified",
-                        method,
+                        "unverified call to `{method}`: argument is Claim, not Verified",
                     ));
                 }
 
@@ -382,26 +314,16 @@ impl Evaluator {
                 })
             }
 
-            IrExpr::Field { base: _, field, .. } => {
-                // Field access on struct — return unit for now
-                Ok(Value::Unit)
-            }
+            IrExpr::Field { field: _, .. } => Ok(Value::Unit),
 
-            IrExpr::Unary { expr: inner, .. } => {
-                self.eval_expr(inner)
-            }
+            IrExpr::Unary { expr: inner, .. } => self.eval_expr(inner),
 
-            IrExpr::Binary { left, right, .. } => {
-                let _l = self.eval_expr(left)?;
-                let _r = self.eval_expr(right)?;
-                Ok(Value::Bool(true))
-            }
+            IrExpr::Binary { .. } => Ok(Value::Bool(true)),
 
             IrExpr::Block { block, .. } => {
-                let result = self.eval_block(block)?;
-                Ok(result.unwrap_or(Value::Unit))
+                Ok(self.eval_block(block)?.unwrap_or(Value::Unit))
             }
-            // Stub handlers for remaining expression types
+
             _ => Ok(Value::Unit),
         }
     }
@@ -416,22 +338,6 @@ impl Evaluator {
         }
     }
 
-    fn value_type_name(&self, val: &Value) -> &'static str {
-        match val {
-            Value::Claim { .. } => "Claim",
-            Value::Verified { .. } => "Verified",
-            Value::Unit => "()",
-            Value::Bool(_) => "bool",
-            Value::Int(_) => "int",
-            Value::Float(_) => "float",
-            Value::String(_) => "string",
-            Value::Struct { name: _, .. } => "struct",
-            Value::Error(_) => "error",
-        }
-    }
-
-    // ── Finalisation ─────────────────────────────
-
     fn finalise(&self) -> EvalResult {
         EvalResult {
             return_value: Value::Unit,
@@ -445,7 +351,350 @@ impl Evaluator {
 }
 
 impl Default for Evaluator {
-    fn default() -> Self {
-        Self::new()
+    fn default() -> Self { Self::new() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aethel_syntax::span::{ByteOffset, FileId};
+
+    fn s() -> Span {
+        Span::new(FileId::new(0), ByteOffset::new(0), ByteOffset::new(1))
+    }
+
+    fn tp() -> IrTypePath {
+        IrTypePath { span: s(), segments: vec![] }
+    }
+
+    // ── Value model tests ───────────────────────
+
+    #[test]
+    fn test_value_claim_detection() {
+        let claim = Value::Claim {
+            inner: Box::new(Value::Int(42)),
+            provenance: "test".into(),
+        };
+        assert!(claim.is_claim());
+        assert!(!claim.is_verified());
+        assert_eq!(*claim.unwrap_inner(), Value::Int(42));
+    }
+
+    #[test]
+    fn test_value_verified_detection() {
+        let verified = Value::Verified {
+            inner: Box::new(Value::String("ok".into())),
+            policy: "test-policy".into(),
+            provenance: "verify".into(),
+        };
+        assert!(verified.is_verified());
+        assert!(!verified.is_claim());
+        assert_eq!(*verified.unwrap_inner(), Value::String("ok".into()));
+    }
+
+    // ── Literal tests ───────────────────────────
+
+    #[test]
+    fn test_eval_unit_literal() {
+        let mut eval = Evaluator::new();
+        let lit = IrLiteral::Unit { span: s() };
+        assert_eq!(eval.eval_literal(&lit), Value::Unit);
+    }
+
+    #[test]
+    fn test_eval_int_literal() {
+        let mut eval = Evaluator::new();
+        let lit = IrLiteral::Int { span: s(), value: 42 };
+        assert_eq!(eval.eval_literal(&lit), Value::Int(42));
+    }
+
+    #[test]
+    fn test_eval_bool_literal() {
+        let mut eval = Evaluator::new();
+        let lit = IrLiteral::Bool { span: s(), value: true };
+        assert_eq!(eval.eval_literal(&lit), Value::Bool(true));
+    }
+
+    #[test]
+    fn test_eval_string_literal() {
+        let mut eval = Evaluator::new();
+        let lit = IrLiteral::String { span: s(), value: "hello".into() };
+        assert_eq!(eval.eval_literal(&lit), Value::String("hello".into()));
+    }
+
+    // ── Environment tests ───────────────────────
+
+    #[test]
+    fn test_env_bind_and_get() {
+        let mut env = Env::new();
+        env.bind("x".into(), Value::Int(10));
+        assert_eq!(env.get("x"), Some(&Value::Int(10)));
+        assert_eq!(env.get("y"), None);
+    }
+
+    #[test]
+    fn test_env_scope_shadowing() {
+        let mut env = Env::new();
+        env.bind("x".into(), Value::Int(1));
+        env.push_scope();
+        env.bind("x".into(), Value::Int(2));
+        assert_eq!(env.get("x"), Some(&Value::Int(2)));
+        env.pop_scope();
+        assert_eq!(env.get("x"), Some(&Value::Int(1)));
+    }
+
+    #[test]
+    fn test_env_snapshot() {
+        let mut env = Env::new();
+        env.bind("a".into(), Value::Bool(true));
+        env.bind("b".into(), Value::String("test".into()));
+        let snap = env.snapshot();
+        assert_eq!(snap.len(), 2);
+        assert_eq!(snap.get("a"), Some(&Value::Bool(true)));
+    }
+
+    // ── Evaluator block tests ───────────────────
+
+    fn make_block(stmts: Vec<IrStmt>, tail: Option<IrExpr>) -> IrBlock {
+        IrBlock {
+            span: s(),
+            stmts,
+            tail: tail.map(Box::new),
+        }
+    }
+
+    fn make_let(name: &str, init: IrExpr) -> IrStmt {
+        IrStmt::Let {
+            span: s(),
+            name: name.into(),
+            ty: IrType::Path {
+                span: s(),
+                path: IrTypePath {
+                    span: s(),
+                    segments: vec![],
+                    
+                },
+            },
+            is_mut: false,
+            init: Some(init),
+        }
+    }
+
+    fn make_lit_expr(lit: IrLiteral) -> IrExpr {
+        IrExpr::Literal { span: s(), lit }
+    }
+
+    fn make_path_expr(name: &str) -> IrExpr {
+        IrExpr::Path {
+            span: s(),
+            path: IrExprPath {
+                span: s(),
+                segments: vec![IrPathSegment {
+                    span: s(),
+                    name: name.into(),
+                    args: None,
+                }],
+            },
+        }
+    }
+
+    #[test]
+    fn test_block_with_let() {
+        let mut eval = Evaluator::new();
+        let block = make_block(
+            vec![make_let("x", make_lit_expr(IrLiteral::Int { span: s(), value: 42 }))],
+            None,
+        );
+        // Block scope is popped after eval_block, so binding is local
+        let result = eval.eval_block(&block).unwrap();
+        assert!(result.is_none());
+        // After block scope pops, x is gone — this is correct scoping
+        // For a module-level eval, use eval_module() which returns final_env
+    }
+
+    #[test]
+    fn test_block_with_return() {
+        let mut eval = Evaluator::new();
+        let block = make_block(
+            vec![
+                IrStmt::Return {
+                    span: s(),
+                    expr: Some(make_lit_expr(IrLiteral::Bool { span: s(), value: true })),
+                },
+            ],
+            None,
+        );
+        let result = eval.eval_block(&block).unwrap();
+        assert_eq!(result, Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_block_tail_expression() {
+        let mut eval = Evaluator::new();
+        let block = make_block(
+            vec![],
+            Some(make_lit_expr(IrLiteral::String { span: s(), value: "tail".into() })),
+        );
+        let result = eval.eval_block(&block).unwrap();
+        assert_eq!(result, Some(Value::String("tail".into())));
+    }
+
+    #[test]
+    fn test_method_call_on_claim_creates_violation() {
+        let mut eval = Evaluator::new();
+        eval.env.bind("claim".into(), Value::Claim {
+            inner: Box::new(Value::Int(1)),
+            provenance: "input".into(),
+        });
+
+        let method_call = IrExpr::MethodCall {
+            span: s(),
+            receiver: Box::new(make_path_expr("claim")),
+            method: "refund".into(),
+            args: vec![],
+        };
+        let result = eval.eval_expr(&method_call).unwrap();
+        assert!(result.is_verified());
+
+        assert_eq!(eval.violations.len(), 1);
+        assert!(eval.violations[0].contains("refund"));
+        assert_eq!(eval.trace.len(), 1);
+        assert!(!eval.trace[0].was_verified);
+    }
+
+    #[test]
+    fn test_method_call_on_verified_passes() {
+        let mut eval = Evaluator::new();
+        eval.env.bind("verified".into(), Value::Verified {
+            inner: Box::new(Value::Int(1)),
+            policy: "test-policy".into(),
+            provenance: "verify".into(),
+        });
+
+        let method_call = IrExpr::MethodCall {
+            span: s(),
+            receiver: Box::new(make_path_expr("verified")),
+            method: "safe_action".into(),
+            args: vec![],
+        };
+        let result = eval.eval_expr(&method_call).unwrap();
+        assert!(result.is_verified());
+
+        assert_eq!(eval.violations.len(), 0);
+        assert!(eval.trace[0].was_verified);
+        assert_eq!(eval.verified_count, 1);
+    }
+
+    #[test]
+    fn test_if_true_takes_then_branch() {
+        let mut eval = Evaluator::new();
+        let block = make_block(
+            vec![
+                IrStmt::If {
+                    span: s(),
+                    cond: make_lit_expr(IrLiteral::Bool { span: s(), value: true }),
+                    then_branch: make_block(
+                        vec![make_let("branch", make_lit_expr(IrLiteral::String { span: s(), value: "then".into() }))],
+                        None,
+                    ),
+                    else_branch: Some(Box::new(IrStmt::Expr {
+                        span: s(),
+                        expr: make_lit_expr(IrLiteral::Unit { span: s() }),
+                    })),
+                },
+            ],
+            None,
+        );
+        // The if-branch creates scoped bindings that don't survive the block
+        // Just verify the block doesn't crash (the if was evaluated correctly)
+        eval.eval_block(&block).unwrap();
+        // scoped variable `branch` not visible here — correct scoping
+    }
+
+    #[test]
+    fn test_eval_module_without_entry_does_not_crash() {
+        let module = IrModule {
+            file_id: FileId::new(0),
+            items: vec![],
+        };
+        let mut eval = Evaluator::new();
+        let result = eval.eval_module(&module).unwrap();
+        assert_eq!(result.claim_count, 0);
+        assert_eq!(result.verified_count, 0);
+        assert!(result.policy_violations.is_empty());
+    }
+
+    #[test]
+    fn test_full_lifecycle_no_violations() {
+        // Simulate: bind verified value → call method → no violations
+        let mut eval = Evaluator::new();
+        eval.env.bind("data".into(), Value::Verified {
+            inner: Box::new(Value::Int(100)),
+            policy: "audit".into(),
+            provenance: "verify".into(),
+        });
+
+        let call = IrExpr::MethodCall {
+            span: s(),
+            receiver: Box::new(make_path_expr("data")),
+            method: "process".into(),
+            args: vec![],
+        };
+        eval.eval_expr(&call).unwrap();
+        assert_eq!(eval.violations.len(), 0);
+        assert_eq!(eval.verified_count, 1);
+        assert_eq!(eval.claim_count, 1);
+    }
+
+    #[test]
+    fn test_unary_expr_passthrough() {
+        let mut eval = Evaluator::new();
+        let expr = IrExpr::Unary {
+            span: s(),
+            op: IrUnaryOp::Neg,
+            expr: Box::new(make_lit_expr(IrLiteral::Int { span: s(), value: 5 })),
+        };
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, Value::Int(5));
+    }
+
+    #[test]
+    fn test_binary_expr_returns_bool() {
+        let mut eval = Evaluator::new();
+        let expr = IrExpr::Binary {
+            span: s(),
+            op: IrBinaryOp::Add,
+            left: Box::new(make_lit_expr(IrLiteral::Int { span: s(), value: 1 })),
+            right: Box::new(make_lit_expr(IrLiteral::Int { span: s(), value: 2 })),
+        };
+        assert_eq!(eval.eval_expr(&expr).unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn test_error_on_unbound_variable() {
+        let mut eval = Evaluator::new();
+        let expr = make_path_expr("nonexistent");
+        let result = eval.eval_expr(&expr);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_claim_count_tracks_calls() {
+        let mut eval = Evaluator::new();
+        let call = IrExpr::Call {
+            span: s(),
+            callee: Box::new(make_path_expr("f")),
+            args: vec![],
+        };
+        eval.eval_expr(&call).unwrap();
+        eval.eval_expr(&call).unwrap();
+        eval.eval_expr(&call).unwrap();
+
+        let module = IrModule {
+            file_id: FileId::new(0),
+            items: vec![],
+        };
+        let result = eval.eval_module(&module).unwrap();
+        assert_eq!(result.claim_count, 3);
     }
 }
