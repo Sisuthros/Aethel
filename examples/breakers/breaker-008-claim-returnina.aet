@@ -1,0 +1,13 @@
+// BREAKER 008 — Returning a Claim directly from a function whose return type is Verified
+// Expected: AE-EPISTEMIC-001 (unverified claim cannot authorize return value)
+// Trick: bypass verify() by returning the raw claim; the return type coercion must fail.
+
+fn claim_in_return(c: Claim<int>) -> Verified<int, IntPolicy> {
+    return c;
+}
+
+policy IntPolicy {
+    Amount: int {
+        evidence SignedAttestation "unreachable"
+    }
+}

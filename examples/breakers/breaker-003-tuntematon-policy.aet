@@ -1,0 +1,26 @@
+// BREAKER 003 — verify() called with a policy that is not declared anywhere
+// Expected: AE-NAME-002 (undefined type) OR AE-EPISTEMIC-003 (policy mismatch on the
+// subsequent effect call, because the inferred Verified<Order, NonexistentPolicy> will
+// not unify with Verified<Order, OrderPolicy>).
+// Trick: shadow the real policy with a misspelled name and try to cross the boundary.
+
+struct Order { id: string, total: int }
+
+fn use_nonexistent_policy(c: Claim<Order>) -> int
+uses Payment:
+    {
+        let verified = verify(c, NonexistentPolicy);
+        // Direct Claim smuggling in parallel: the unverified claim also tries to
+        // reach the effect, which forces AE-EPISTEMIC-001.
+        return payment.charge(c);
+    }
+
+effect Payment {
+    fn charge(order: Verified<Order, OrderPolicy>) -> int
+}
+
+policy OrderPolicy {
+    Order: Order {
+        evidence SignedAttestation "merchant signed"
+    }
+}

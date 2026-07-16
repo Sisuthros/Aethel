@@ -1,0 +1,22 @@
+// BREAKER 001 — Direct type forgery: Claim<...> bound to a Verified<...> let
+// Trick: the user annotates the variable as Verified to bypass the epistemic check.
+// Expected: AE-EPISTEMIC-001 (unverified claim cannot be assigned to Verified slot)
+
+struct Order { id: string, total: int }
+
+fn forge_claim(c: Claim<Order>) -> Verified<Order, OrderPolicy>
+uses Payment:
+    {
+        let forged: Verified<Order, OrderPolicy> = c;
+        return payment.charge(forged);
+    }
+
+effect Payment {
+    fn charge(order: Verified<Order, OrderPolicy>) -> int
+}
+
+policy OrderPolicy {
+    Order: Order {
+        evidence SignedAttestation "merchant signed"
+    }
+}

@@ -1,0 +1,18 @@
+// BREAKER 002 — Claim variable passed directly to effect (canonical "forgot to verify" bug)
+// Expected: AE-EPISTEMIC-001
+
+struct Order { id: string, total: int }
+
+fn forgot_to_verify(c: Claim<Order>) -> int
+uses Payment:
+    { return payment.charge(c); }
+
+effect Payment {
+    fn charge(order: Verified<Order, OrderPolicy>) -> int
+}
+
+policy OrderPolicy {
+    Order: Order {
+        evidence SignedAttestation "merchant signed"
+    }
+}

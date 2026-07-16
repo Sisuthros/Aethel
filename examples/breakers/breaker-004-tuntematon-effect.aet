@@ -1,0 +1,24 @@
+// BREAKER 004 — Effect that has not been declared in `uses:` and uses a fake receiver.
+// Trick: call a method on `fake_effect` which is not a declared effect AND not in
+// the uses clause, but then mix in a real (declared) effect smuggling a Claim
+// to ensure a guaranteed catch.
+// Expected: AE-NAME-003 (undefined effect) and/or AE-EPISTEMIC-001
+
+struct Order { id: string, total: int }
+
+fn use_undeclared_effect(c: Claim<Order>) -> int
+uses Payment:
+    {
+        let _x = fake_effect.do_stuff(c);
+        return payment.charge(c);
+    }
+
+effect Payment {
+    fn charge(order: Verified<Order, OrderPolicy>) -> int
+}
+
+policy OrderPolicy {
+    Order: Order {
+        evidence SignedAttestation "merchant signed"
+    }
+}
