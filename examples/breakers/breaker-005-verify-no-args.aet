@@ -1,0 +1,13 @@
+// BREAKER 005 — verify() called with no arguments
+// Expected: AE-PARSE-001/002 (parse error, expected `(` content)
+// Trick: a legal keyword but with the arity destroyed.
+
+fn empty_verify() -> Verified<int, SomePolicy> {
+    return verify();
+}
+
+policy SomePolicy {
+    Amount: int {
+        evidence SignedAttestation "unreachable"
+    }
+}

@@ -1,0 +1,17 @@
+// BREAKER 007 — Effect method called with no arguments
+// Expected: AE-TYPE-001 (argument count mismatch) or AE-PARSE-001
+// Trick: log_action requires a Verified argument; calling it with none must fail.
+
+fn no_arg_effect() -> int
+uses AuditService:
+    { return audit_service.log_action(); }
+
+effect AuditService {
+    fn log_action(action: Verified<int, IntPolicy>) -> int
+}
+
+policy IntPolicy {
+    Amount: int {
+        evidence SignedAttestation "unreachable"
+    }
+}

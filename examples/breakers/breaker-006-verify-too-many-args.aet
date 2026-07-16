@@ -1,0 +1,13 @@
+// BREAKER 006 — verify() with too many arguments
+// Expected: AE-PARSE-001/002 or AE-TYPE-003 (unexpected type args)
+// Trick: the parser must reject any third argument.
+
+fn extra_arg_verify(c: Claim<int>) -> Verified<int, SomePolicy> {
+    return verify(c, SomePolicy, 42);
+}
+
+policy SomePolicy {
+    Amount: int {
+        evidence SignedAttestation "unreachable"
+    }
+}

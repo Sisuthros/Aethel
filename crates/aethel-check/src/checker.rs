@@ -148,6 +148,56 @@ pub fn check_module(module: &aethel_syntax::ast::Module, file_id: FileId) -> (Ir
     (ir_module, ctx.diagnostics)
 }
 
+/// Check a HIR module and produce IR with full type checking.
+pub fn check_hir_module(module: &aethel_hir::lower::HirModule, file_id: FileId) -> (IrModule, Diagnostics) {
+    let mut ctx = CheckContext::new(file_id);
+
+    // Phase 1: Collect effect definitions from HIR
+    for item in &module.items {
+        if let aethel_hir::lower::HirItem::Effect(e) = item {
+            let ops: Vec<aethel_effects::EffectOperation> = e.operations.iter().map(|op| {
+                aethel_effects::EffectOperation {
+                    name: op.name.clone(),
+                    params: op.params.iter().map(|p| aethel_effects::EffectParam {
+                        name: p.name.clone(),
+                        ty: crate::types::lower_hir_type(&p.ty),
+                    }).collect(),
+                    ret_type: op.ret_type.as_ref().map(|t| crate::types::lower_hir_type(t)),
+                }
+            }).collect();
+            ctx.effect_registry.effects.insert(e.name.clone(), aethel_effects::EffectDefinition {
+                name: e.name.clone(),
+                operations: ops,
+            });
+        }
+    }
+
+    // Phase 2: Collect policy definitions
+    for item in &module.items {
+        collect_policies(&mut ctx, item);
+    }
+
+    // Phase 3: Collect type definitions
+    for item in &module.items {
+        collect_type_defs(&mut ctx, item);
+    }
+
+    // Phase 4: Type-check and lower each item to IR
+    let mut ir_items: Vec<IrItem> = Vec::new();
+    for item in &module.items {
+        if let Some(ir_item) = check_item(&mut ctx, item) {
+            ir_items.push(ir_item);
+        }
+    }
+
+    let ir_module = IrModule {
+        file_id,
+        items: ir_items,
+    };
+
+    (ir_module, ctx.diagnostics)
+}
+
 /// Collect effect definitions from source AST items.
 fn collect_effect_defs_from_source(ctx: &mut CheckContext, module: &aethel_syntax::ast::Module) {
     for item in &module.items {
@@ -772,7 +822,19 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
             Some(IrExpr::Literal { span, lit: lower_literal(lit) })
         }
         HirExpr::Path { path, .. } => {
-            Some(IrExpr::Path { span, path: lower_expr_path(path) })
+            let name = path.segments.last()
+                .map(|s| s.name.clone())
+                .unwrap_or_default();
+            let ir_path = IrExpr::Path { span, path: lower_expr_path(path) };
+            // Look up the type from the environment
+            if let Some(var_info) = ctx.type_env.resolve_variable(&name) {
+                let ir_type = var_info.ty.clone();
+                Some(ir_path.with_type(ir_type))
+            } else if let Some(_type_symbol) = ctx.type_env.resolve_type(&name) {
+                Some(ir_path)
+            } else {
+                Some(ir_path)
+            }
         }
         HirExpr::Tuple { exprs, .. } => {
             Some(IrExpr::Tuple { span, exprs: exprs.iter().map(|e| check_expr(ctx, e)).collect::<Option<Vec<_>>>()? })
