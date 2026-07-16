@@ -119,6 +119,12 @@ impl Env {
         None
     }
 
+    pub fn remove(&mut self, name: &str) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.remove(name);
+        }
+    }
+
     pub fn snapshot(&self) -> HashMap<String, Value> {
         let mut all = HashMap::new();
         for scope in &self.scopes {
@@ -159,6 +165,7 @@ impl Evaluator {
         let entry_name = self.find_entry(module);
 
         if let Some(entry_fn) = entry_name {
+            self.bind_params(entry_fn);
             if let Some(body) = &entry_fn.body {
                 self.eval_block(body)?;
             }
@@ -166,14 +173,31 @@ impl Evaluator {
             // No entry point — evaluate all function bodies
             for item in &module.items {
                 if let IrItem::Fn(f) = item {
+                    self.bind_params(f);
                     if let Some(body) = &f.body {
                         self.eval_block(body)?;
                     }
+                    self.unbind_params(f);
                 }
             }
         }
 
         Ok(self.finalise())
+    }
+
+    fn bind_params(&mut self, f: &IrFnDef) {
+        for param in &f.params {
+            self.env.bind(param.name.clone(), Value::Claim {
+                inner: Box::new(Value::Unit),
+                provenance: format!("param:{}", param.name),
+            });
+        }
+    }
+
+    fn unbind_params(&mut self, f: &IrFnDef) {
+        for param in &f.params {
+            self.env.remove(&param.name);
+        }
     }
 
     fn find_entry<'a>(&self, module: &'a IrModule) -> Option<&'a IrFnDef> {
@@ -269,44 +293,65 @@ impl Evaluator {
                 let name = path.segments.last()
                     .map(|s| s.name.clone())
                     .unwrap_or_default();
-                self.env.get(&name)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("unbound variable: {name}"))
-            }
-
-            IrExpr::Call { args, .. } => {
-                self.claim_count += 1;
-                for arg in args {
-                    self.eval_expr(arg)?;
+                // Try variable lookup first (function params, let bindings)
+                if let Some(val) = self.env.get(&name) {
+                    return Ok(val.clone());
                 }
-                Ok(Value::Claim {
-                    inner: Box::new(Value::Unit),
-                    provenance: "call_expr".into(),
-                })
+                // Not a variable — effect/type/policy/builtin namespace
+                Ok(Value::Unit)
             }
 
-            IrExpr::MethodCall { span, receiver, method, .. } => {
-                let receiver_val = self.eval_expr(receiver)?;
-                let is_verified = receiver_val.is_verified();
+            IrExpr::Call { callee, args, .. } => {
+                self.claim_count += 1;
+                for arg in args { self.eval_expr(arg)?; }
+                // Namespace calls (verify(), etc.) produce Verified
+                let callee_val = if let IrExpr::Path { .. } = callee.as_ref() {
+                    self.eval_expr(callee)?
+                } else {
+                    Value::Unit
+                };
+                if matches!(callee_val, Value::Unit) {
+                    Ok(Value::Verified {
+                        inner: Box::new(Value::Unit),
+                        policy: "builtin".into(),
+                        provenance: "verify".into(),
+                    })
+                } else {
+                    Ok(callee_val)
+                }
+            }
+
+            IrExpr::MethodCall { span, receiver, method, args, .. } => {
+                // Evaluate the receiver — resolve variable if bound in env
+                let receiver_val = match receiver.as_ref() {
+                    IrExpr::Path { path, .. } => {
+                        let name = path.segments.last().map(|s| s.name.clone()).unwrap_or_default();
+                        self.env.get(&name).cloned().unwrap_or(Value::Unit)
+                    }
+                    other => self.eval_expr(other)?,
+                };
+                // Decide which value to check: if args exist, check first arg;
+                // otherwise check the receiver (e.g. `data.process()` pattern)
+                let effect_arg = if args.is_empty() {
+                    receiver_val
+                } else {
+                    let arg = &args[0]; self.eval_expr(arg)?
+                };
+                let is_verified = effect_arg.is_verified();
                 if !is_verified {
                     self.violations.push(format!(
                         "unverified call to `{method}`: argument is Claim, not Verified",
                     ));
                 }
-
                 self.trace.push(EffectTrace {
                     span: span.clone(),
                     effect_name: method.clone(),
-                    argument: receiver_val.clone(),
+                    argument: effect_arg,
                     was_verified: is_verified,
                     error: if is_verified { None } else { Some("unverified claim".into()) },
                 });
-
-                if is_verified {
-                    self.verified_count += 1;
-                }
+                if is_verified { self.verified_count += 1; }
                 self.claim_count += 1;
-
                 Ok(Value::Verified {
                     inner: Box::new(Value::Unit),
                     policy: "effects".into(),
@@ -324,6 +369,64 @@ impl Evaluator {
                 Ok(self.eval_block(block)?.unwrap_or(Value::Unit))
             }
 
+            // ── Aethel-specific: verify, ask, reason, commit_once ──
+
+            IrExpr::Verify { claim, policy, .. } => {
+                self.claim_count += 1;
+                self.verified_count += 1;
+                let claim_val = self.eval_expr(claim)?;
+                let policy_name = policy.segments.last()
+                    .map(|s| s.name.clone()).unwrap_or_default();
+                Ok(Value::Verified {
+                    inner: Box::new(claim_val),
+                    policy: policy_name,
+                    provenance: "verify".into(),
+                })
+            }
+
+            IrExpr::Ask { .. } => {
+                self.claim_count += 1;
+                Ok(Value::Claim {
+                    inner: Box::new(Value::Unit),
+                    provenance: "ask".into(),
+                })
+            }
+
+            IrExpr::CommitOnce { effect, args, .. } => {
+                self.claim_count += 1;
+                let name = effect.path.segments.last()
+                    .map(|s| s.name.clone()).unwrap_or_default();
+                let is_verified = args.first()
+                    .map(|a| self.eval_expr(a).map(|v| v.is_verified()).unwrap_or(false))
+                    .unwrap_or(false);
+                if !is_verified {
+                    self.violations.push(format!(
+                        "unverified commit_once to `{name}`: argument is Claim"
+                    ));
+                }
+                Ok(Value::Unit)
+            }
+
+            IrExpr::Reason { .. } => { self.claim_count += 1; Ok(Value::Unit) }
+
+            // ── Control flow stubs ──
+            IrExpr::If { cond, then_branch, else_branch, .. } => {
+                let cond_val = self.eval_expr(cond)?;
+                if matches!(cond_val, Value::Bool(true)) { self.eval_expr(then_branch) }
+                else if let Some(e) = else_branch { self.eval_expr(e) }
+                else { Ok(Value::Unit) }
+            }
+            IrExpr::Return { expr, .. } => {
+                if let Some(e) = expr { self.eval_expr(e) } else { Ok(Value::Unit) }
+            }
+
+            // ── Data stubs ──
+            IrExpr::Tuple { exprs, .. } | IrExpr::Array { exprs, .. } => {
+                for e in exprs { self.eval_expr(e)?; } Ok(Value::Unit)
+            }
+            IrExpr::Struct { fields, .. } => {
+                for f in fields { self.eval_expr(&f.expr)?; } Ok(Value::Unit)
+            }
             _ => Ok(Value::Unit),
         }
     }
@@ -671,11 +774,11 @@ mod tests {
     }
 
     #[test]
-    fn test_error_on_unbound_variable() {
+    fn test_unknown_path_returns_unit() {
         let mut eval = Evaluator::new();
         let expr = make_path_expr("nonexistent");
-        let result = eval.eval_expr(&expr);
-        assert!(result.is_err());
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, Value::Unit);
     }
 
     #[test]

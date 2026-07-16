@@ -1,0 +1,13 @@
+fn test(a: Claim<int>) -> int
+uses TestEffect:
+    { let b = verify(a, TestPolicy); return test_effect.call(b); }
+
+effect TestEffect {
+    fn call(decision: Verified<int, TestPolicy>) -> int
+}
+
+policy TestPolicy {
+    TestClaim: int {
+        evidence SignedAttestation "test"
+    }
+}
