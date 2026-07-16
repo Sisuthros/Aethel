@@ -1,0 +1,20 @@
+// Runtime violation: Claim is passed directly to an effect method
+// without verify(). The type checker won't catch this because
+// the Claim arrives via a different path.
+// Expected: interpreter detects unverified call at runtime
+
+fn transfer(amount: Claim<int>) -> Receipt
+uses Banking:
+    { return banking.transfer(amount); }
+
+effect Banking {
+    fn transfer(amount: Verified<int, FraudCheck>) -> Receipt
+}
+
+policy FraudCheck {
+    Amount: int {
+        evidence AuditLog "Standard fraud screening"
+    }
+}
+
+struct Receipt { id: string, status: string }
