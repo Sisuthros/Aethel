@@ -99,7 +99,10 @@ fn lower_item(item: &hir::HirItem) -> Option<ir::IrItem> {
         hir::HirItem::Mod(def) => Some(ir::IrItem::Mod(ir::IrModDecl {
             span: def.span,
             name: def.name.clone(),
-            body: def.body.as_ref().map(|body| lower_module(body, body.file_id)),
+            body: def
+                .body
+                .as_ref()
+                .map(|body| lower_module(body, body.file_id)),
             is_pub: def.is_pub,
         })),
         hir::HirItem::Policy(def) => Some(ir::IrItem::Policy(ir::IrPolicyDef {
@@ -126,7 +129,9 @@ fn lower_item(item: &hir::HirItem) -> Option<ir::IrItem> {
                                     ir::IrEvidenceKind::CryptographicProof
                                 }
                                 hir::HirEvidenceKind::AuditLog => ir::IrEvidenceKind::AuditLog,
-                                hir::HirEvidenceKind::HumanReview => ir::IrEvidenceKind::HumanReview,
+                                hir::HirEvidenceKind::HumanReview => {
+                                    ir::IrEvidenceKind::HumanReview
+                                }
                                 hir::HirEvidenceKind::Custom(value) => {
                                     ir::IrEvidenceKind::Custom(value.clone())
                                 }
