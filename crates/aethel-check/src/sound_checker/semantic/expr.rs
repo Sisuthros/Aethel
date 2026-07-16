@@ -15,7 +15,11 @@ impl SemanticChecker {
             hir::HirExpr::Path { span, path } => {
                 let name = expr_path_name(path);
                 self.lookup(&name).unwrap_or_else(|| {
-                    self.error(codes::UNDEFINED_VAR(), format!("unknown value `{name}`"), *span);
+                    self.error(
+                        codes::UNDEFINED_VAR(),
+                        format!("unknown value `{name}`"),
+                        *span,
+                    );
                     ir::IrType::Unit { span: *span }
                 })
             }
@@ -60,7 +64,11 @@ impl SemanticChecker {
                         }
                     }
                 } else {
-                    self.error(codes::UNDEFINED_TYPE(), format!("unknown struct `{name}`"), *span);
+                    self.error(
+                        codes::UNDEFINED_TYPE(),
+                        format!("unknown struct `{name}`"),
+                        *span,
+                    );
                 }
                 if let Some(base) = base {
                     self.check_expr(base);
@@ -88,7 +96,11 @@ impl SemanticChecker {
                         }
                     }
                 }
-                self.error(codes::UNDEFINED_VAR(), format!("unknown field `{field}`"), *span);
+                self.error(
+                    codes::UNDEFINED_VAR(),
+                    format!("unknown field `{field}`"),
+                    *span,
+                );
                 ir::IrType::Unit { span: *span }
             }
             hir::HirExpr::Index { span, base, index } => {
@@ -103,7 +115,11 @@ impl SemanticChecker {
                 match base_ty {
                     ir::IrType::Array { ty, .. } => *ty,
                     _ => {
-                        self.error(codes::TYPE_MISMATCH(), "cannot index non-array value", *span);
+                        self.error(
+                            codes::TYPE_MISMATCH(),
+                            "cannot index non-array value",
+                            *span,
+                        );
                         ir::IrType::Unit { span: *span }
                     }
                 }
@@ -128,7 +144,11 @@ impl SemanticChecker {
                     hir::HirUnaryOp::Deref => match actual {
                         ir::IrType::Ref { ty, .. } => *ty,
                         _ => {
-                            self.error(codes::TYPE_MISMATCH(), "cannot dereference non-reference", *span);
+                            self.error(
+                                codes::TYPE_MISMATCH(),
+                                "cannot dereference non-reference",
+                                *span,
+                            );
                             ir::IrType::Unit { span: *span }
                         }
                     },
@@ -181,11 +201,15 @@ impl SemanticChecker {
                 }
                 result.unwrap_or(ir::IrType::Unit { span: *span })
             }
-            hir::HirExpr::Block { span, block } => {
-                self.check_block(block).unwrap_or(ir::IrType::Unit { span: *span })
-            }
+            hir::HirExpr::Block { span, block } => self
+                .check_block(block)
+                .unwrap_or(ir::IrType::Unit { span: *span }),
             hir::HirExpr::Let {
-                span, pat, ty, init, ..
+                span,
+                pat,
+                ty,
+                init,
+                ..
             } => {
                 let actual = self.check_expr(init);
                 let declared = ty.as_ref().map_or_else(|| actual.clone(), lower_type);
@@ -196,7 +220,9 @@ impl SemanticChecker {
             hir::HirExpr::Return { span, expr } => {
                 let actual = expr
                     .as_ref()
-                    .map_or(ir::IrType::Unit { span: *span }, |expr| self.check_expr(expr));
+                    .map_or(ir::IrType::Unit { span: *span }, |expr| {
+                        self.check_expr(expr)
+                    });
                 if let Some(expected) = self.current_return.clone() {
                     self.require_assignable(&actual, &expected, *span, "return value");
                 }
@@ -284,7 +310,11 @@ impl SemanticChecker {
         let name = match callee {
             hir::HirExpr::Path { path, .. } => expr_path_name(path),
             _ => {
-                self.error(codes::TYPE_MISMATCH(), "callee must be a named function", span);
+                self.error(
+                    codes::TYPE_MISMATCH(),
+                    "callee must be a named function",
+                    span,
+                );
                 for arg in args {
                     self.check_expr(arg);
                 }
@@ -293,10 +323,19 @@ impl SemanticChecker {
         };
         let actual: Vec<_> = args.iter().map(|arg| self.check_expr(arg)).collect();
         if let Some(signature) = self.functions.get(&name).cloned() {
-            self.check_args(&actual, &signature.params, span, &format!("function `{name}`"));
+            self.check_args(
+                &actual,
+                &signature.params,
+                span,
+                &format!("function `{name}`"),
+            );
             signature.ret
         } else {
-            self.error(codes::UNDEFINED_VAR(), format!("unknown function `{name}`"), span);
+            self.error(
+                codes::UNDEFINED_VAR(),
+                format!("unknown function `{name}`"),
+                span,
+            );
             ir::IrType::Unit { span }
         }
     }
@@ -369,7 +408,10 @@ impl SemanticChecker {
             other => {
                 self.error(
                     codes::EPISTEMIC_VERIFIED_REQUIRED(),
-                    format!("verify requires Claim<T>, found `{}`", self.format_type(&other)),
+                    format!(
+                        "verify requires Claim<T>, found `{}`",
+                        self.format_type(&other)
+                    ),
                     span,
                 );
                 ir::IrType::Unit { span }
