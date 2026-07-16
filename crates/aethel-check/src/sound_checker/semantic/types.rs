@@ -115,10 +115,7 @@ impl SemanticChecker {
                     policy: right_policy,
                     ..
                 },
-            ) => {
-                self.types_equal(left_ty, right_ty)
-                    && self.types_equal(left_policy, right_policy)
-            }
+            ) => self.types_equal(left_ty, right_ty) && self.types_equal(left_policy, right_policy),
             (ir::IrType::Array { ty: left, .. }, ir::IrType::Array { ty: right, .. }) => {
                 self.types_equal(left, right)
             }
@@ -214,7 +211,11 @@ impl SemanticChecker {
                 let types = match ty {
                     ir::IrType::Tuple { types, .. } => types.clone(),
                     _ => {
-                        self.error(codes::TYPE_MISMATCH(), "tuple pattern requires tuple", *span);
+                        self.error(
+                            codes::TYPE_MISMATCH(),
+                            "tuple pattern requires tuple",
+                            *span,
+                        );
                         vec![ir::IrType::Unit { span: *span }; pats.len()]
                     }
                 };
@@ -234,11 +235,7 @@ impl SemanticChecker {
                     }
                 }
             }
-            hir::HirPat::Enum { fields, span, .. }
-            | hir::HirPat::Or {
-                pats: fields,
-                span,
-            } => {
+            hir::HirPat::Enum { fields, span, .. } | hir::HirPat::Or { pats: fields, span } => {
                 for field in fields {
                     let field_ty = ir::IrType::Unit { span: *span };
                     self.bind_pattern(field, &field_ty);
@@ -281,12 +278,7 @@ impl SemanticChecker {
             .find_map(|scope| scope.get(name).cloned())
     }
 
-    pub(super) fn error(
-        &mut self,
-        code: DiagnosticCode,
-        message: impl Into<String>,
-        span: Span,
-    ) {
+    pub(super) fn error(&mut self, code: DiagnosticCode, message: impl Into<String>, span: Span) {
         self.diagnostics.push(
             DiagnosticBuilder::error(code, message)
                 .primary_label(span, "here")
