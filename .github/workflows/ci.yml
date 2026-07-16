@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, feat/**]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -34,6 +38,8 @@ jobs:
           path: |
             crates/aethel-check/src/lib.rs
             crates/aethel-check/src/sound_checker
+            crates/aethel-interpreter/src/lib.rs
+            crates/aethel-interpreter/src/sound_eval.rs
           if-no-files-found: error
 
       - name: Run clippy
@@ -47,8 +53,6 @@ jobs:
 
       - name: Run integration tests
         run: cargo test -p aethel-cli --test integration_test --release
-
-      # ── Vertical slice tests ────────────────────
 
       - name: "✅ valid_verified.aet → type checks"
         run: ./target/release/aethel-cli check examples/refund/valid_verified.aet
