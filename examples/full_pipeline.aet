@@ -1,0 +1,64 @@
+// Aethel — Full pipeline demonstration
+// Three-step agentic workflow with epistemic security
+
+// ── Step 1: Define data types ──
+
+struct UserAction {
+    id: string,
+    description: string,
+    risk_score: int,
+}
+
+struct ActionResult {
+    action_id: string,
+    status: string,
+    result: string,
+}
+
+// ── Step 2: Define policies ──
+
+policy RiskAssessment {
+    ActionRisk: UserAction {
+        evidence SignedAttestation "Risk model v2.1 assessment"
+    }
+}
+
+policy AdminOverride {
+    OverrideAction: UserAction {
+        evidence HumanReview "Admin Dmitry override log"
+    }
+}
+
+// ── Step 3: Define effects ──
+
+effect AuditService {
+    fn log_action(action: Verified<UserAction, RiskAssessment>) -> ActionResult
+    fn log_override(action: Verified<UserAction, AdminOverride>) -> ActionResult
+}
+
+effect ExecutionService {
+    fn execute(action: Verified<UserAction, RiskAssessment>) -> ActionResult
+    fn execute_override(action: Verified<UserAction, AdminOverride>) -> ActionResult
+}
+
+// ── Step 4: Main workflow ──
+
+fn process_action(raw_action: Claim<UserAction>) -> ActionResult
+uses AuditService, ExecutionService:
+    {
+        // Step 1: Reason about the action
+        let reason = reason("Analyzing action risk for {raw_action.id}");
+
+        // Step 2: Verify — produces Verified<UserAction, RiskAssessment>
+        let assessed = verify(raw_action, RiskAssessment);
+
+        // Step 3: Chain effects — log, then execute
+        let log = audit_service.log_action(assessed);
+
+        // The "copy" here is a reference — we can use the same verified
+        // value because verification is semantic, not consumptive
+        let result = execution_service.execute(assessed);
+
+        // Return the execution result
+        return result;
+    }
