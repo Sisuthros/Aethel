@@ -1,7 +1,7 @@
 //! Main type checker orchestration.
 
 use aethel_hir::lower::HirModule;
-use aethel_ir::lower::{IrModule, IrType, IrTypePath, IrPathSegment, IrGenericArgs, IrGenericArg};
+use aethel_ir::lower::*;
 use aethel_syntax::diagnostic::{Diagnostics, DiagnosticCode, DiagnosticSeverity};
 use aethel_syntax::span::{FileId, Span};
 use aethel_effects::EffectRegistry;
@@ -137,9 +137,12 @@ pub fn check_module(module: &aethel_syntax::ast::Module, file_id: FileId) -> (Ir
     // Phase 4: Type-check each function body
     check_function_bodies(&mut ctx, module);
 
+    // Phase 5: Lower AST items to IR items for the interpreter
+    let ir_items = collect_ir_items(module);
+
     let ir_module = IrModule {
         file_id,
-        items: vec![],
+        items: ir_items,
     };
 
     (ir_module, ctx.diagnostics)
@@ -1289,4 +1292,218 @@ impl IrExprSpan for aethel_ir::lower::IrExpr {
             IrExpr::New { span, .. } => *span,
         }
     }
+}
+
+// ── AST-to-IR lowering (for interpreter) ──────────────
+
+/// Collect IR items from an AST module.
+fn collect_ir_items(module: &aethel_syntax::ast::Module) -> Vec<IrItem> {
+    use aethel_syntax::ast::Item;
+    let mut items = Vec::new();
+    for item in &module.items {
+        match item {
+            Item::Fn(f) => items.push(IrItem::Fn(lower_fn(f))),
+            Item::Struct(s) => items.push(IrItem::Struct(IrStructDef {
+                span: s.span, name: s.name.name.clone(), generics: vec![], fields: vec![], is_pub: false,
+            })),
+            Item::Enum(_) => {} // skip: IR enum details differ from AST
+            Item::TypeAlias(t) => items.push(IrItem::TypeAlias(IrTypeAlias {
+                span: t.span, name: t.name.name.clone(), generics: vec![], ty: ir_type_from_ast(&t.ty), is_pub: false,
+            })),
+            Item::Use(u) => {
+                let path_span = match &u.path {
+                    aethel_syntax::ast::UsePath::Simple { span, .. } => *span,
+                    aethel_syntax::ast::UsePath::Glob { span, .. } => *span,
+                    aethel_syntax::ast::UsePath::Group { span, .. } => *span,
+                };
+                items.push(IrItem::Use(IrUseDecl {
+                    span: u.span, is_pub: false,
+                    path: IrUsePath::Simple { span: path_span, path: IrTypePath { span: path_span, segments: vec![] } },
+                }));
+            }
+            Item::Mod(m) => items.push(IrItem::Mod(IrModDecl { span: m.span, name: m.name.name.clone(), body: None, is_pub: false })),
+            Item::Policy(p) => items.push(IrItem::Policy(IrPolicyDef { span: p.span, name: p.name.name.clone(), generics: vec![], claims: vec![], is_pub: false })),
+            Item::Effect(_) => {}
+        }
+    }
+    items
+}
+
+fn lower_fn(f: &aethel_syntax::ast::FnDef) -> IrFnDef {
+    IrFnDef {
+        span: f.span,
+        name: f.name.name.clone(),
+        generics: f.generics.iter().map(|g| IrGenericParam { span: g.span, name: g.name.name.clone(), bounds: vec![] }).collect(),
+        params: f.params.iter().map(|p| IrParam { span: p.span, name: p.name.name.clone(), ty: ir_type_from_ast(&p.ty), is_mut: p.is_mut }).collect(),
+        ret_type: f.ret_type.as_ref().map(|t| ir_type_from_ast(t)).unwrap_or(IrType::Unit { span: f.span }),
+        effects: IrEffectSet {
+            span: f.effects.span,
+            effects: f.effects.effects.iter().map(|er| IrEffectRef { span: er.span, path: ir_typ_path(&er.path) }).collect(),
+        },
+        body: f.body.as_ref().map(|b| lower_block(b)),
+        is_pub: f.is_pub,
+    }
+}
+
+fn lower_block(b: &aethel_syntax::ast::Block) -> IrBlock {
+    IrBlock {
+        span: b.span,
+        stmts: b.stmts.iter().map(|s| lower_stmt(s)).collect(),
+        tail: b.tail.as_ref().map(|e| Box::new(lower_expr(e))),
+    }
+}
+
+fn lower_stmt(s: &aethel_syntax::ast::Stmt) -> IrStmt {
+    use aethel_syntax::ast::Stmt;
+    match s {
+        Stmt::Let { span, name, ty, is_mut, init } => IrStmt::Let {
+            span: *span, name: name.name.clone(), ty: ty.as_ref().map(|t| ir_type_from_ast(t)).unwrap_or(IrType::Unit { span: *span }),
+            is_mut: *is_mut, init: init.as_ref().map(|e| lower_expr(e)),
+        },
+        Stmt::Expr { span, expr } => IrStmt::Expr { span: *span, expr: lower_expr(expr) },
+        Stmt::Return { span, expr } => IrStmt::Return { span: *span, expr: expr.as_ref().map(|e| lower_expr(e)) },
+        Stmt::If { span, cond, then_branch, else_branch } => IrStmt::If {
+            span: *span, cond: lower_expr(cond), then_branch: lower_block(then_branch),
+            else_branch: else_branch.as_ref().map(|s| Box::new(lower_stmt(s))),
+        },
+        Stmt::While { span, cond, body } => IrStmt::While { span: *span, cond: lower_expr(cond), body: lower_block(body) },
+        Stmt::For { span, pat, iter, body } => IrStmt::For { span: *span, pat: lower_pat(pat), iter: lower_expr(iter), body: lower_block(body) },
+        Stmt::Match { span, scrutinee, arms } => IrStmt::Match {
+            span: *span, scrutinee: lower_expr(scrutinee),
+            arms: arms.iter().map(|a| IrMatchArm { span: a.span, pat: lower_pat(&a.pat), guard: None, body: lower_expr(&a.body) }).collect(),
+        },
+        Stmt::Block { span, block } => IrStmt::Block { span: *span, block: lower_block(block) },
+        Stmt::Use { span, .. } => IrStmt::Expr { span: *span, expr: IrExpr::Literal { span: *span, lit: IrLiteral::Unit { span: *span } } },
+    }
+}
+
+fn lower_expr(e: &aethel_syntax::ast::Expr) -> IrExpr {
+    use aethel_syntax::ast::{Expr, UnaryOp, BinaryOp};
+    match e {
+        Expr::Literal { span, lit } => IrExpr::Literal { span: *span, lit: lower_lit(lit) },
+        Expr::Path { span, path } => IrExpr::Path { span: *span, path: ir_exp_path(path) },
+        Expr::Tuple { span, exprs } => IrExpr::Tuple { span: *span, exprs: exprs.iter().map(|e| lower_expr(e)).collect() },
+        Expr::Array { span, exprs } => IrExpr::Array { span: *span, exprs: exprs.iter().map(|e| lower_expr(e)).collect() },
+        Expr::Struct { span, path, fields, base } => IrExpr::Struct {
+            span: *span, path: ir_typ_path(path),
+            fields: fields.iter().map(|f| IrStructExprField { span: f.span, name: f.name.name.clone(), expr: lower_expr(&f.expr) }).collect(),
+            base: base.as_ref().map(|b| Box::new(lower_expr(b))),
+        },
+        Expr::Call { span, callee, args } => IrExpr::Call {
+            span: *span, callee: Box::new(lower_expr(callee)),
+            args: args.iter().map(|e| lower_expr(e)).collect(),
+        },
+        Expr::MethodCall { span, receiver, method, args } => IrExpr::MethodCall {
+            span: *span, receiver: Box::new(lower_expr(receiver)),
+            method: method.name.clone(), args: args.iter().map(|e| lower_expr(e)).collect(),
+        },
+        Expr::Field { span, base, field } => IrExpr::Field {
+            span: *span, base: Box::new(lower_expr(base)), field: field.name.clone(),
+        },
+        Expr::Index { span, base, index } => IrExpr::Index {
+            span: *span, base: Box::new(lower_expr(base)), index: Box::new(lower_expr(index)),
+        },
+        Expr::Unary { span, op, expr } => IrExpr::Unary {
+            span: *span, expr: Box::new(lower_expr(expr)),
+            op: match op { UnaryOp::Neg => IrUnaryOp::Neg, UnaryOp::Not => IrUnaryOp::Not, UnaryOp::Deref => IrUnaryOp::Deref },
+        },
+        Expr::Binary { span, op, left, right } => IrExpr::Binary {
+            span: *span,
+            op: match op { BinaryOp::Add => IrBinaryOp::Add, BinaryOp::Sub => IrBinaryOp::Sub, BinaryOp::Mul => IrBinaryOp::Mul, BinaryOp::Div => IrBinaryOp::Div, BinaryOp::Rem => IrBinaryOp::Rem, BinaryOp::Eq => IrBinaryOp::Eq, BinaryOp::Ne => IrBinaryOp::Ne, BinaryOp::Lt => IrBinaryOp::Lt, BinaryOp::Le => IrBinaryOp::Le, BinaryOp::Gt => IrBinaryOp::Gt, BinaryOp::Ge => IrBinaryOp::Ge, BinaryOp::And => IrBinaryOp::And, BinaryOp::Or => IrBinaryOp::Or, BinaryOp::Assign => IrBinaryOp::Assign, BinaryOp::AddAssign => IrBinaryOp::AddAssign, BinaryOp::SubAssign => IrBinaryOp::SubAssign, BinaryOp::MulAssign => IrBinaryOp::MulAssign, BinaryOp::DivAssign => IrBinaryOp::DivAssign, BinaryOp::RemAssign => IrBinaryOp::RemAssign },
+            left: Box::new(lower_expr(left)), right: Box::new(lower_expr(right)),
+        },
+        Expr::If { span, cond, then_branch, else_branch } => IrExpr::If {
+            span: *span, cond: Box::new(lower_expr(cond)),
+            then_branch: Box::new(lower_expr(then_branch)),
+            else_branch: else_branch.as_ref().map(|e| Box::new(lower_expr(e))),
+        },
+        Expr::Match { span, scrutinee, arms } => IrExpr::Match {
+            span: *span, scrutinee: Box::new(lower_expr(scrutinee)),
+            arms: arms.iter().map(|a| IrMatchArm { span: a.span, pat: lower_pat(&a.pat), guard: None, body: lower_expr(&a.body) }).collect(),
+        },
+        Expr::Block { span, block } => IrExpr::Block { span: *span, block: lower_block(block) },
+        Expr::Let { span, pat, ty, is_mut, init } => IrExpr::Let {
+            span: *span, pat: lower_pat(pat),
+            ty: ty.as_ref().map(|t| ir_type_from_ast(t)).unwrap_or(IrType::Unit { span: *span }),
+            is_mut: *is_mut, init: Box::new(lower_expr(init)),
+        },
+        Expr::Return { span, expr } => IrExpr::Return { span: *span, expr: expr.as_ref().map(|e| Box::new(lower_expr(e))) },
+        Expr::Break { span, expr } => IrExpr::Break { span: *span, expr: expr.as_ref().map(|e| Box::new(lower_expr(e))) },
+        Expr::Continue { span } => IrExpr::Continue { span: *span },
+        Expr::Ask { span, model, goal, input, output_ty } => IrExpr::Ask {
+            span: *span, model: ir_exp_path(model), goal: goal.clone(),
+            input: Box::new(lower_expr(input)), output_ty: ir_type_from_ast(output_ty),
+        },
+        Expr::Verify { span, claim, policy } => IrExpr::Verify {
+            span: *span, claim: Box::new(lower_expr(claim)), policy: ir_typ_path(policy),
+        },
+        Expr::Reason { span, prompt } => IrExpr::Reason { span: *span, prompt: prompt.clone() },
+        Expr::CommitOnce { span, effect, args } => IrExpr::CommitOnce {
+            span: *span, effect: IrEffectRef { span: effect.span, path: ir_typ_path(&effect.path) },
+            args: args.iter().map(|e| lower_expr(e)).collect(),
+        },
+        Expr::New { span, ty, args } => IrExpr::New {
+            span: *span, ty: ir_type_from_ast(ty), args: args.iter().map(|e| lower_expr(e)).collect(),
+        },
+    }
+}
+
+fn lower_lit(l: &aethel_syntax::ast::Literal) -> IrLiteral {
+    use aethel_syntax::ast::Literal;
+    match l {
+        Literal::Unit { span } => IrLiteral::Unit { span: *span },
+        Literal::Bool { span, value } => IrLiteral::Bool { span: *span, value: *value },
+        Literal::Int { span, value } => IrLiteral::Int { span: *span, value: *value },
+        Literal::Float { span, value } => IrLiteral::Float { span: *span, value: *value },
+        Literal::String { span, value } => IrLiteral::String { span: *span, value: value.clone() },
+    }
+}
+
+fn lower_pat(p: &aethel_syntax::ast::Pat) -> IrPat {
+    use aethel_syntax::ast::Pat;
+    match p {
+        Pat::Wild { span } => IrPat::Wild { span: *span },
+        Pat::Ident { span, name, is_mut } => IrPat::Ident { span: *span, name: name.name.clone(), is_mut: *is_mut },
+        Pat::Literal { span, lit } => IrPat::Literal { span: *span, lit: lower_lit(lit) },
+        Pat::Tuple { span, pats } => IrPat::Tuple { span: *span, pats: pats.iter().map(|p| lower_pat(p)).collect() },
+        Pat::Struct { span, path, fields } => IrPat::Struct {
+            span: *span, path: ir_typ_path(path),
+            fields: fields.iter().map(|f| IrPatField { span: f.span, name: f.name.name.clone(), pat: f.pat.as_ref().map(|p| lower_pat(p)) }).collect(),
+        },
+        Pat::Enum { span, path, fields } => IrPat::Enum { span: *span, path: ir_typ_path(path), fields: fields.iter().map(|p| lower_pat(p)).collect() },
+        Pat::Or { span, pats } => IrPat::Or { span: *span, pats: pats.iter().map(|p| lower_pat(p)).collect() },
+        Pat::Ref { span, is_mut, pat } => IrPat::Ref { span: *span, is_mut: *is_mut, pat: Box::new(lower_pat(pat)) },
+    }
+}
+
+// ── Type/Path helpers ────────────────────────────────
+
+fn ir_type_from_ast(t: &aethel_syntax::ast::Type) -> IrType {
+    use aethel_syntax::ast::Type;
+    use aethel_syntax::span::Spanned;
+    let span = t.span();
+    match t {
+        Type::Unit { .. } => IrType::Unit { span },
+        Type::Never { .. } => IrType::Never { span },
+        Type::Bool { .. } => IrType::Bool { span },
+        Type::Int { .. } => IrType::Int { span },
+        Type::Float { .. } => IrType::Float { span },
+        Type::String { .. } => IrType::String { span },
+        Type::Path { path, .. } => IrType::Path { span, path: ir_typ_path(path) },
+        Type::Owned { ty, .. } => IrType::Owned { span, ty: Box::new(ir_type_from_ast(ty)) },
+        Type::Ref { ty, is_mut, .. } => IrType::Ref { span, is_mut: *is_mut, ty: Box::new(ir_type_from_ast(ty)) },
+        Type::Claim { ty, .. } => IrType::Claim { span, ty: Box::new(ir_type_from_ast(ty)) },
+        Type::Verified { ty, policy, .. } => IrType::Verified { span, ty: Box::new(ir_type_from_ast(ty)), policy: Box::new(ir_type_from_ast(policy)) },
+        Type::Tuple { types, .. } => IrType::Tuple { span, types: types.iter().map(ir_type_from_ast).collect() },
+        Type::Array { ty, .. } => IrType::Array { span, ty: Box::new(ir_type_from_ast(ty)), size: None },
+        Type::Fn { params, ret, .. } => IrType::Fn { span, params: params.iter().map(ir_type_from_ast).collect(), ret: Box::new(ir_type_from_ast(ret)), effects: IrEffectSet { span, effects: vec![] } },
+    }
+}
+
+fn ir_typ_path(p: &aethel_syntax::ast::TypePath) -> IrTypePath {
+    IrTypePath { span: p.span, segments: p.segments.iter().map(|s| IrPathSegment { span: s.span, name: s.name.name.clone(), args: None }).collect() }
+}
+
+fn ir_exp_path(p: &aethel_syntax::ast::ExprPath) -> IrExprPath {
+    IrExprPath { span: p.span, segments: p.segments.iter().map(|s| IrPathSegment { span: s.span, name: s.name.name.clone(), args: None }).collect() }
 }
