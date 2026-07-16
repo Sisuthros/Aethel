@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/**]
+    branches: [main, feat/**, fix/**]
   pull_request:
-    branches: [main]
+    branches: [main, feat/**]
 
 env:
   CARGO_TERM_COLOR: always
@@ -44,16 +44,15 @@ jobs:
       - name: "✅ valid_verified.aet → type checks"
         run: ./target/release/aethel-cli check examples/refund/valid_verified.aet
 
-      - name: "❌ invalid_unverified.aet → exit non-zero"
+      - name: "❌ invalid_unverified.aet → AE-EPISTEMIC-001"
         run: |
           set +e
-          ./target/release/aethel-cli check examples/refund/invalid_unverified.aet
+          OUTPUT=$(./target/release/aethel-cli check examples/refund/invalid_unverified.aet 2>&1)
           EXIT_CODE=$?
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "❌ Expected non-zero exit (type error), got 0"
-            exit 1
-          fi
-          echo "✅ Correctly rejected (exit code $EXIT_CODE)"
+          set -e
+          echo "$OUTPUT"
+          test $EXIT_CODE -ne 0
+          echo "$OUTPUT" | grep -q "AE-EPISTEMIC-001"
 
       - name: "✅ valid_verified.aet run → No policy violations"
         run: |
@@ -68,13 +67,11 @@ jobs:
       - name: "❌ runtime violation → non-zero exit"
         run: |
           set +e
-          ./target/release/aethel-cli run examples/runtime_violation.aet 2>/dev/null
+          OUTPUT=$(./target/release/aethel-cli run examples/runtime_violation.aet 2>&1)
           EXIT_CODE=$?
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "❌ Expected non-zero exit for violation, got 0"
-            exit 1
-          fi
-          echo "✅ Violation correctly blocked (exit code $EXIT_CODE)"
+          set -e
+          echo "$OUTPUT"
+          test $EXIT_CODE -ne 0
 
       - name: "✅ full_pipeline.aet → 0 violations"
         run: |
@@ -84,7 +81,8 @@ jobs:
       - name: "✅ full_pipeline.aet --trace → log_action + execute"
         run: |
           OUTPUT=$(./target/release/aethel-cli run examples/full_pipeline.aet --trace 2>&1)
-          echo "$OUTPUT" | grep -q "log_action" && echo "$OUTPUT" | grep -q "execute"
+          echo "$OUTPUT" | grep -q "log_action"
+          echo "$OUTPUT" | grep -q "execute"
           echo "✅ Both effects in trace"
 
       - name: "✅ emit-ir → valid JSON"
@@ -94,18 +92,50 @@ jobs:
       - name: "✅ pipeline tests"
         run: cargo test -p aethel-check pipeline_test --release
 
-      - name: "❌ breaker tests — all expected failures pass"
+      - name: "❌ breaker tests → exact diagnostics"
+        shell: bash
         run: |
           set +e
           FAILURES=0
+
+          expected_pattern() {
+            case "$1" in
+              breaker-001-*) echo 'AE-EPISTEMIC-001' ;;
+              breaker-002-*) echo 'AE-EPISTEMIC-001' ;;
+              breaker-003-*) echo 'AE-NAME-002' ;;
+              breaker-004-*) echo 'AE-NAME-003' ;;
+              breaker-005-*) echo 'AE-PARSE-00[12]' ;;
+              breaker-006-*) echo 'AE-PARSE-00[12]|AE-TYPE-003' ;;
+              breaker-007-*) echo 'AE-TYPE-001' ;;
+              breaker-008-*) echo 'AE-EPISTEMIC-001' ;;
+              *) echo 'NEVER_MATCH' ;;
+            esac
+          }
+
           for f in examples/breakers/*.aet; do
-            echo -n "  $(basename $f)... "
-            ./target/release/aethel-cli check "$f" 2>/dev/null
-            if [ $? -eq 0 ]; then
+            NAME=$(basename "$f")
+            EXPECTED=$(expected_pattern "$NAME")
+            OUTPUT=$(./target/release/aethel-cli check "$f" 2>&1)
+            STATUS=$?
+
+            echo "── $NAME"
+            if [ $STATUS -eq 0 ]; then
               echo "❌ SHOULD HAVE FAILED"
               FAILURES=$((FAILURES+1))
+              continue
+            fi
+
+            if echo "$OUTPUT" | grep -Eq "$EXPECTED"; then
+              echo "✅ rejected with expected diagnostic: $EXPECTED"
             else
-              echo "✅ correctly rejected"
+              echo "❌ wrong failure; expected: $EXPECTED"
+              echo "$OUTPUT"
+              FAILURES=$((FAILURES+1))
             fi
           done
-          [ $FAILURES -eq 0 ] && echo "✅ All breakers caught" || (echo "❌ $FAILURES breakers slipped through!"; exit 1)
+
+          if [ $FAILURES -ne 0 ]; then
+            echo "❌ $FAILURES breaker test(s) failed"
+            exit 1
+          fi
+          echo "✅ All breakers caught for the right reason"
