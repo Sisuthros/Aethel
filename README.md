@@ -1,155 +1,175 @@
 # Aethel
 
-**A deterministic policy- and type-language for AI agent workflows.**
+**A deterministic policy and type language for trustworthy AI-agent effects.**
 
-*Aethel enforces one core guarantee: a `Claim<T>` (model output) cannot cross an effect boundary where a `Verified<T, Policy>` is required — verified first, or rejected.*
+Aethel enforces one core invariant:
+
+> A `Claim<T>` cannot be used where an effect requires `Verified<T, Policy>`.
+
+The compiler rejects the program before an effect is dispatched. The bundled interpreter is a fail-closed symbolic simulator for tests and traces, not a production effect runtime.
 
 ```bash
-# Quick start
 cargo build --release -p aethel-cli
 
-# Type-check and run a complete agent workflow
-./target/release/aethel-cli run examples/full_pipeline.aet --trace
-```
-
----
-
-## What Aethel Does
-
-AI agents produce claims. An agent says *"this transaction is safe"* — that's a `Claim<RiskAssessment>`. Before that claim can authorize a bank transfer, it must be **verified** against a policy.
-
-Aethel enforces this at **compile time** and **at runtime**:
-
-| What you write | What it means | Enforced? |
-|---|---|---|
-| `verify(claim, Policy)` | Produces `Verified<T, Policy>` | ✅ Type system |
-| `Claim<T>` → effect boundary | Rejected | ✅ **AE-EPISTEMIC-001** |
-| `Verified<T, Policy>` → effect boundary | Accepted | ✅ Runtime trace |
-
-The enforcement is **type-based** — it works regardless of names, files, or conventions.
-
-## Demo
-
-```bash
-# An invalid program: passing raw Claim to an effect
 ./target/release/aethel-cli check examples/refund/invalid_unverified.aet
-# → AE-EPISTEMIC-001: unverified claim cannot authorize `payments.refund`
-
-# A valid program: verify first
-./target/release/aethel-cli run examples/refund/valid_verified.aet
-# → ✓ No policy violations
-
-# Full pipeline: reason → verify → log → execute
 ./target/release/aethel-cli run examples/full_pipeline.aet --trace
-# → 4 claims, 3 verified, 0 violations
-# → Effect Trace:
-#      1. ✓ effect `log_action`
-#      2. ✓ effect `execute`
-
-# Inspect the program as Semantic IR JSON
-./target/release/aethel-cli emit-ir examples/refund/valid_verified.aet
 ```
 
-## Status — v0.3 "Verified Pipeline"
+## Core model
 
-### ✅ Pipeline: source → verified execution
-
-| Stage | Status | Tests |
-|-------|--------|-------|
-| Lexer | ✅ 9/9 syntax | `cargo test -p aethel-syntax` |
-| Parser → AST | ✅ | |
-| HIR lowering + name resolution | ✅ | |
-| Type checker (Claim/Verified) | ✅ 6/6 adversarial | `cargo test -p aethel-check` |
-| **AST→IR lowering** | ✅ **NEW** | collector produces non-empty IR |
-| **Interpreter** (effect dispatch) | ✅ **NEW** | 21/21 tests |
-| **Integration tests** | ✅ **NEW** | 9/9 (check, run, trace, emit-ir) |
-| **CI pipeline** | ✅ GitHub Actions | fmt + clippy + test + negative tests |
-
-### ✅ What Aethel understands
-
-| Feature | Example | Status |
-|---------|---------|--------|
-| Types | `int`, `bool`, `string`, structs | ✅ |
-| Epistemic types | `Claim<T>`, `Verified<T, Policy>` | ✅ |
-| Effects | `effect Name { fn op(params) -> Ret }` | ✅ |
-| Policies | `policy Name { ClaimName: Type { evidence ... } }` | ✅ |
-| `verify(claim, Policy)` | → `Verified<T, Policy>` | ✅ |
-| `ask(model, goal, input)` | → `Claim<T>` | ✅ |
-| `reason("prompt")` | Reasoning step marker | ✅ |
-| `commit_once effect(args)` | Effect dispatch with verification | ✅ |
-| Method calls | `effect.op(verified)` with arg check | ✅ |
-| `aethel run --trace` | Effect chain trace | ✅ |
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────┐
-│                   aethel-cli                      │
-│  check │ run │ emit-ir │ fmt                     │
-├──────────────────────────────────────────────────┤
-│  aethel-check   │  aethel-interpreter             │
-│  ┌──────────────┤  ┌───────────────────────────┐  │
-│  │ Type checker  │  │ Evaluator                │  │
-│  │ Epistemic     │  │ Value model              │  │
-│  │ rules         │  │ Effect trace             │  │
-│  │ AST→IR lower  │  │ Policy violation detect  │  │
-│  └──────────────┤  └───────────────────────────┘  │
-├──────────────────┴───────────────────────────────┤
-│  aethel-ir   │  aethel-hir   │  aethel-syntax    │
-│  IR types    │  HIR types    │  Lexer → Parser   │
-│  lowering    │  resolution   │  → AST → spans    │
-├──────────────────────────────────────────────────┤
-│  aethel-effects   │  aethel-runtime  │  storage   │
-│  (effect reg.)    │  (stubs)         │  (stubs)    │
-└──────────────────────────────────────────────────┘
-```
-
-**12 crates** | **~8,842 LOC** | **32 tests** (23 unit + 9 integration)
-
-## Quick Reference
-
-```bash
-cargo build --release -p aethel-cli
-alias aethel=./target/release/aethel-cli
-
-aethel check file.aet                # Type-check only
-aethel run file.aet                  # Type-check + interpret
-aethel run file.aet --trace          # + show effect trace
-aethel emit-ir file.aet              # Semantic IR JSON
-aethel fmt file.aet                  # Format source (stub)
-```
-
-## Language Example
+AI models produce claims. Claims are untrusted values:
 
 ```aethel
+Claim<RiskAssessment>
+```
+
+A declared policy can transform a compatible claim into a policy-bound verified value:
+
+```aethel
+let assessed = verify(raw_action, RiskAssessmentPolicy);
+// assessed: Verified<UserAction, RiskAssessmentPolicy>
+```
+
+Effects declare the exact verified type and policy they accept:
+
+```aethel
+effect ExecutionService {
+    fn execute(action: Verified<UserAction, RiskAssessmentPolicy>) -> ActionResult
+}
+```
+
+The checker rejects:
+
+- `Claim<T>` assigned to `Verified<T, Policy>`
+- raw claims crossing effect boundaries
+- policy mismatches
+- unknown policies, effects, operations, types, or values
+- wrong argument counts and incompatible argument types
+- returning `Claim<T>` from a function that promises `Verified<T, Policy>`
+- direct construction of `Verified` values outside `verify`
+
+## Compiler pipeline
+
+```text
+source
+  → lexer and parser
+  → AST
+  → HIR lowering
+  → name and declaration resolution
+  → semantic type and policy checking
+  → IR
+  → fail-closed symbolic simulation
+```
+
+All CLI commands use the same checker entrypoint. There is no separate permissive path for `emit-ir`.
+
+## Commands
+
+```bash
+alias aethel=./target/release/aethel-cli
+
+aethel check file.aet
+aethel run file.aet
+aethel run file.aet --trace
+aethel emit-ir file.aet
+aethel fmt file.aet       # parser validation only; formatter remains a stub
+```
+
+## Example
+
+```aethel
+struct UserAction {
+    id: string,
+    description: string,
+}
+
+struct ActionResult {
+    status: string,
+}
+
+policy RiskAssessmentPolicy {
+    ActionRisk: UserAction {
+        evidence SignedAttestation "risk model assessment"
+    }
+}
+
+effect AuditService {
+    fn log_action(action: Verified<UserAction, RiskAssessmentPolicy>) -> ActionResult
+}
+
+effect ExecutionService {
+    fn execute(action: Verified<UserAction, RiskAssessmentPolicy>) -> ActionResult
+}
+
 fn process_action(raw_action: Claim<UserAction>) -> ActionResult
 uses AuditService, ExecutionService:
     {
-        // Reason about the action
-        let _ = reason("Analyzing action risk ...");
-
-        // Verify — Claim → Verified
-        let assessed = verify(raw_action, RiskAssessment);
-
-        // Use verified value across multiple effects
-        let _log = audit_service.log_action(assessed);
+        let assessed = verify(raw_action, RiskAssessmentPolicy);
+        let _audit = audit_service.log_action(assessed);
         let result = execution_service.execute(assessed);
-
         return result;
     }
 ```
 
-See `examples/full_pipeline.aet` for the complete version.
+See `examples/full_pipeline.aet` for the complete runnable demonstration.
 
-## The Bigger Picture
+## Safety posture
 
-Aethel is one layer of a three-layer stack:
+### Enforced by the checker
 
+- scoped function parameters and local bindings
+- assignment and return-type compatibility
+- function and effect argument arity
+- structural `Claim<T>` and `Verified<T, Policy>` separation
+- exact verification-policy matching
+- policy existence and accepted claim types
+- fail-closed unknown and ambiguous effect operations
+- stable machine-readable diagnostics such as `AE-EPISTEMIC-001`
+
+### Enforced by the symbolic interpreter
+
+- generic calls never mint verified values
+- `verify` accepts only runtime `Claim` values
+- unverified effect attempts produce violations and error values
+- failed effects never return verified values
+- arithmetic no longer returns fabricated booleans
+
+### Not provided by Aethel Core
+
+- external effect execution
+- durable resume after crashes
+- exactly-once side effects
+- real evidence acquisition or cryptographic proof validation
+- model-provider integrations
+- WASM isolation
+- distributed execution
+- package management or LSP support
+
+Those boundaries are deliberate. In the intended stack:
+
+```text
+Lumen OS    chooses why work is done
+Aethel      decides what may be done and what proof is required
+FamilyClaw  executes approved work durably and exactly once
 ```
-Aethel:     What an agent may do and with what proof
-FamilyClaw: How work is executed durably and exactly-once
-Lumen OS:   Why work is done and what the mission priority is
+
+## Verification
+
+The repository includes positive examples and adversarial breaker fixtures. CI requires:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-features
+cargo build --release -p aethel-cli
+cargo test -p aethel-cli --test integration_test --release
 ```
+
+Breaker fixtures must fail with their expected diagnostic code. A parser crash or unrelated error does not count as a successful security test.
+
+## Status
+
+Aethel v0.3 is an **alpha policy compiler and symbolic simulator**. Its compiler boundary is intended to fail closed, but it is not a standalone production runtime. Review `docs/non-guarantees.md` before integrating it with real effects.
 
 ## License
 
