@@ -256,6 +256,7 @@ fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
         for v in &result.policy_violations {
             println!("    • {}", v.red());
         }
+        anyhow::bail!("Policy violations detected — execution blocked");
     }
 
     if show_trace && !result.effect_trace.is_empty() {
