@@ -1,5 +1,5 @@
-//! Interpreter for Aethel IR.
+//! Fail-closed interpreter for validated Aethel IR.
 
-pub mod eval;
-
-pub use eval::*;
+pub mod sound_eval;
+pub use sound_eval as eval;
+pub use sound_eval::*;
