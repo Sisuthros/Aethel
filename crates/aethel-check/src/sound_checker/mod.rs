@@ -69,10 +69,12 @@ mod tests {
             policy P1 { Order: Order { evidence SignedAttestation "ok" } }
             policy P2 { Order: Order { evidence SignedAttestation "ok" } }
             effect Pay { fn send(order: Verified<Order, P1>) -> int }
-            fn f(c: Claim<Order>) -> int uses Pay: {
-                let checked = verify(c, P2);
-                return pay.send(checked);
-            }
+            fn f(c: Claim<Order>) -> int
+            uses Pay:
+                {
+                    let checked = verify(c, P2);
+                    return pay.send(checked);
+                }
             "#,
         );
         assert!(diagnostics
