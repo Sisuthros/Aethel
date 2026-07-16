@@ -1,0 +1,52 @@
+name: Checker diagnostics
+
+on:
+  push:
+    branches: [fix/aethel-sound-hir-pipeline]
+  pull_request:
+    branches: [feat/**]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format working copy
+        run: cargo fmt --all
+
+      - name: Capture clippy
+        id: clippy
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee clippy.log
+
+      - name: Capture build
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --release -p aethel-cli 2>&1 | tee build.log
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checker-diagnostic-logs
+          path: |
+            clippy.log
+            build.log
+          if-no-files-found: error
+
+      - name: Fail on compiler errors
+        if: steps.clippy.outcome == 'failure' || steps.build.outcome == 'failure'
+        run: exit 1
