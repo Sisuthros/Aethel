@@ -1,7 +1,6 @@
 //! Effect runtime support.
 
 use aethel_ir::lower::*;
-use aethel_syntax::span::Span;
 use anyhow::Result;
 
 /// Effect handler trait.
