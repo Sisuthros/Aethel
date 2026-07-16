@@ -74,7 +74,10 @@ impl SemanticChecker {
                     self.known_types.insert(def.name.clone());
                     self.policies.insert(
                         def.name.clone(),
-                        def.claims.iter().map(|claim| lower_type(&claim.ty)).collect(),
+                        def.claims
+                            .iter()
+                            .map(|claim| lower_type(&claim.ty))
+                            .collect(),
                     );
                 }
                 hir::HirItem::Effect(def) => {
@@ -91,10 +94,12 @@ impl SemanticChecker {
                                             .iter()
                                             .map(|param| lower_type(&param.ty))
                                             .collect(),
-                                        ret: operation
-                                            .ret_type
-                                            .as_ref()
-                                            .map_or(ir::IrType::Unit { span: operation.span }, lower_type),
+                                        ret: operation.ret_type.as_ref().map_or(
+                                            ir::IrType::Unit {
+                                                span: operation.span,
+                                            },
+                                            lower_type,
+                                        ),
                                     },
                                 )
                             })
@@ -105,7 +110,11 @@ impl SemanticChecker {
                     self.functions.insert(
                         def.name.clone(),
                         FunctionSig {
-                            params: def.params.iter().map(|param| lower_type(&param.ty)).collect(),
+                            params: def
+                                .params
+                                .iter()
+                                .map(|param| lower_type(&param.ty))
+                                .collect(),
                             ret: def
                                 .ret_type
                                 .as_ref()
@@ -200,7 +209,11 @@ impl SemanticChecker {
             hir::HirType::Path { span, path } => {
                 let name = type_path_name(path);
                 if !self.is_known_type(&name) {
-                    self.error(codes::UNDEFINED_TYPE(), format!("unknown type `{name}`"), *span);
+                    self.error(
+                        codes::UNDEFINED_TYPE(),
+                        format!("unknown type `{name}`"),
+                        *span,
+                    );
                 }
             }
             hir::HirType::Ref { ty, .. }
@@ -336,7 +349,9 @@ impl SemanticChecker {
             hir::HirStmt::Return { span, expr } => {
                 let actual = expr
                     .as_ref()
-                    .map_or(ir::IrType::Unit { span: *span }, |expr| self.check_expr(expr));
+                    .map_or(ir::IrType::Unit { span: *span }, |expr| {
+                        self.check_expr(expr)
+                    });
                 if let Some(expected) = self.current_return.clone() {
                     self.require_assignable(&actual, &expected, *span, "return value");
                 }
@@ -359,7 +374,9 @@ impl SemanticChecker {
                 self.require_bool(&cond_ty, expr_span(cond));
                 self.check_block(body);
             }
-            hir::HirStmt::For { pat, iter, body, .. } => {
+            hir::HirStmt::For {
+                pat, iter, body, ..
+            } => {
                 let iter_ty = self.check_expr(iter);
                 let element = match iter_ty {
                     ir::IrType::Array { ty, .. } => *ty,
@@ -369,7 +386,9 @@ impl SemanticChecker {
                             "for-loop requires an array",
                             expr_span(iter),
                         );
-                        ir::IrType::Unit { span: expr_span(iter) }
+                        ir::IrType::Unit {
+                            span: expr_span(iter),
+                        }
                     }
                 };
                 self.push_scope();
