@@ -1,5 +1,8 @@
 //! Aethel syntax crate: lexer, parser, AST, and diagnostics.
 
+// Diagnostic constructors intentionally mirror their stable public code names.
+#![allow(non_snake_case)]
+
 pub mod ast;
 pub mod diagnostic;
 pub mod lexer;
