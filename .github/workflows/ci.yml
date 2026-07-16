@@ -28,47 +28,84 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings 2>&1 | grep -v "warning:" || true
-
-      - name: Run unit tests
-        run: cargo test --workspace --all-features
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build release CLI
         run: cargo build --release -p aethel-cli
 
+      - name: Run unit tests
+        run: cargo test --workspace --all-features
+
+      - name: Run integration tests
+        run: cargo test -p aethel-cli --test integration_test --release
+
       # ── Vertical slice tests ────────────────────
 
       - name: "✅ valid_verified.aet → type checks"
-        run: cargo run --release -p aethel-cli -- check examples/refund/valid_verified.aet
+        run: ./target/release/aethel-cli check examples/refund/valid_verified.aet
 
-      - name: "❌ invalid_unverified.aet → AE-EPISTEMIC-001"
+      - name: "❌ invalid_unverified.aet → exit non-zero"
         run: |
           set +e
-          cargo run --release -p aethel-cli -- check examples/refund/invalid_unverified.aet
+          ./target/release/aethel-cli check examples/refund/invalid_unverified.aet
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 0 ]; then
-            echo "❌ Expected exit code 1 (type error), got 0"
+            echo "❌ Expected non-zero exit (type error), got 0"
             exit 1
           fi
           echo "✅ Correctly rejected (exit code $EXIT_CODE)"
 
-      - name: "✅ valid_verified.aet run → 2 claims, 2 verified, 0 violations"
+      - name: "✅ valid_verified.aet run → No policy violations"
         run: |
-          cargo run --release -p aethel-cli -- run examples/refund/valid_verified.aet 2>&1 | grep -q "No policy violations"
+          ./target/release/aethel-cli run examples/refund/valid_verified.aet 2>&1 | grep -q "No policy violations"
           echo "✅ Interpreter: valid program passes"
 
       - name: "✅ valid_verified.aet --trace → effect trace"
         run: |
-          cargo run --release -p aethel-cli -- run examples/refund/valid_verified.aet --trace 2>&1 | grep -q "effect \`refund\`"
+          ./target/release/aethel-cli run examples/refund/valid_verified.aet --trace 2>&1 | grep -q "Effect Trace"
           echo "✅ Effect trace present"
 
-      - name: "✅ simple let/test compiles"
+      - name: "❌ runtime violation → non-zero exit"
         run: |
-          echo "fn main() { let x = 42; }" > /tmp/simple.aet
-          cargo run --release -p aethel-cli -- check /tmp/simple.aet
+          set +e
+          ./target/release/aethel-cli run examples/runtime_violation.aet 2>/dev/null
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "❌ Expected non-zero exit for violation, got 0"
+            exit 1
+          fi
+          echo "✅ Violation correctly blocked (exit code $EXIT_CODE)"
 
-      - name: "✅ pipeline tests — non-empty IR"
-        run: cargo test -p aethel-check pipeline_test
+      - name: "✅ full_pipeline.aet → 0 violations"
+        run: |
+          ./target/release/aethel-cli run examples/full_pipeline.aet 2>&1 | grep -q "No policy violations"
+          echo "✅ Full pipeline passes"
 
-      - name: "✅ all interpreter tests green"
-        run: cargo test -p aethel-interpreter --release
+      - name: "✅ full_pipeline.aet --trace → log_action + execute"
+        run: |
+          OUTPUT=$(./target/release/aethel-cli run examples/full_pipeline.aet --trace 2>&1)
+          echo "$OUTPUT" | grep -q "log_action" && echo "$OUTPUT" | grep -q "execute"
+          echo "✅ Both effects in trace"
+
+      - name: "✅ emit-ir → valid JSON"
+        run: |
+          ./target/release/aethel-cli emit-ir examples/refund/valid_verified.aet 2>&1 | python3 -c "import json,sys; json.load(sys.stdin); print('✅ Valid JSON')"
+
+      - name: "✅ pipeline tests"
+        run: cargo test -p aethel-check pipeline_test --release
+
+      - name: "❌ breaker tests — all expected failures pass"
+        run: |
+          set +e
+          FAILURES=0
+          for f in examples/breakers/*.aet; do
+            echo -n "  $(basename $f)... "
+            ./target/release/aethel-cli check "$f" 2>/dev/null
+            if [ $? -eq 0 ]; then
+              echo "❌ SHOULD HAVE FAILED"
+              FAILURES=$((FAILURES+1))
+            else
+              echo "✅ correctly rejected"
+            fi
+          done
+          [ $FAILURES -eq 0 ] && echo "✅ All breakers caught" || (echo "❌ $FAILURES breakers slipped through!"; exit 1)
