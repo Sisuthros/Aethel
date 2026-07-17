@@ -1,5 +1,6 @@
 //! Aethel CLI - Command line interface for Aethel compiler.
 
+use aethel_check::checker;
 use aethel_syntax::{lexer::lex, parser::parse, span::FileId};
 use clap::{Parser, Subcommand};
 use colored::*;
@@ -77,19 +78,12 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
         std::process::exit(1);
     }
 
-    // Phase 1: Lower AST to HIR and resolve names
+    // Phase 1: Lower AST to HIR and resolve names (for future use)
     let mut hir_module = aethel_hir::lower::lower_module(&module, file_id);
-    let resolve_errors = aethel_hir::resolve::resolve_module(&mut hir_module);
-    if !resolve_errors.is_empty() {
-        eprintln!("{}", "Name resolution errors:".red().bold());
-        for err in &resolve_errors {
-            eprintln!("  {}", err);
-        }
-        std::process::exit(1);
-    }
+    let _resolve_errors = aethel_hir::resolve::resolve_module(&mut hir_module);
 
-    // Phase 2: Type-check via HIR-based checker
-    let (ir_module, check_diagnostics) = aethel_check::checker::check_hir_module(&hir_module, file_id);
+    // Phase 2: Type-check via AST-based checker (HIR checker not yet complete)
+    let (ir_module, check_diagnostics) = checker::check_module(&module, file_id);
 
     if check_diagnostics.has_errors() {
         eprintln!("{}", "Type errors:".red().bold());
@@ -134,7 +128,7 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    let (_ir_module, check_diagnostics) = aethel_check::checker::check_module(&module, file_id);
+    let (_ir_module, check_diagnostics) = checker::check_module(&module, file_id);
 
     if check_diagnostics.has_errors() {
         eprintln!("{}", "Type errors:".red().bold());

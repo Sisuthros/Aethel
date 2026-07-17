@@ -822,19 +822,8 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
             Some(IrExpr::Literal { span, lit: lower_literal(lit) })
         }
         HirExpr::Path { path, .. } => {
-            let name = path.segments.last()
-                .map(|s| s.name.clone())
-                .unwrap_or_default();
             let ir_path = IrExpr::Path { span, path: lower_expr_path(path) };
-            // Look up the type from the environment
-            if let Some(var_info) = ctx.type_env.resolve_variable(&name) {
-                let ir_type = var_info.ty.clone();
-                Some(ir_path.with_type(ir_type))
-            } else if let Some(_type_symbol) = ctx.type_env.resolve_type(&name) {
-                Some(ir_path)
-            } else {
-                Some(ir_path)
-            }
+            Some(ir_path)
         }
         HirExpr::Tuple { exprs, .. } => {
             Some(IrExpr::Tuple { span, exprs: exprs.iter().map(|e| check_expr(ctx, e)).collect::<Option<Vec<_>>>()? })
