@@ -462,12 +462,17 @@ fn check_expr_for_epistemic_violations(
             let found_effect_op = {
                 let effect_registry = &ctx.effect_registry;
                 receiver_name.and_then(|rname| {
+                    // Exact match first
                     if let Some(ef) = effect_registry.get(rname) {
                         return ef.operations.iter().find(|o| o.name == method.name);
                     }
-                    for (_, ef) in &effect_registry.effects {
-                        if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
-                            return Some(op);
+                    // Case-insensitive match
+                    let rname_lower = rname.to_lowercase();
+                    for (ename, ef) in &effect_registry.effects {
+                        if ename.to_lowercase() == rname_lower {
+                            if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
+                                return Some(op);
+                            }
                         }
                     }
                     None
@@ -502,13 +507,34 @@ fn check_expr_for_epistemic_violations(
                         if needs_verified {
                             if let Expr::Path { path: arg_path, .. } = arg {
                                 if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
-                                    if let Some(var_info) = ctx.type_env.get_variable(arg_name) {
-                                        if matches!(var_info.ty, IrType::Claim { .. }) {
+                                    let var_ty = ctx.type_env.get_variable(arg_name).map(|v| v.ty.clone());
+                                    if let Some(ref ty) = var_ty {
+                                        if matches!(ty, IrType::Claim { .. }) {
                                             ctx.error(
                                                 aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
                                                 &format!("unverified claim cannot authorize `{}.{}`", receiver_name.unwrap_or("?"), method.name),
                                                 *span,
                                             );
+                                        }
+                                        // TYPE CHECK: Verify policy name matches operation's expected policy
+                                        if let IrType::Verified { policy: arg_pol, .. } = ty {
+                                            if let IrType::Verified { policy: param_pol, .. } = &param_ty.ty {
+                                                let arg_pn = match arg_pol.as_ref() {
+                                                    IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                                                    _ => "",
+                                                };
+                                                let param_pn = match param_pol.as_ref() {
+                                                    IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                                                    _ => "",
+                                                };
+                                                if !arg_pn.is_empty() && !param_pn.is_empty() && arg_pn != param_pn {
+                                                    ctx.error(
+                                                        aethel_syntax::diagnostic::codes::EPISTEMIC_POLICY_MISMATCH(),
+                                                        &format!("policy mismatch: verified with `{arg_pn}`, effect requires `{param_pn}`"),
+                                                        *span,
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }
