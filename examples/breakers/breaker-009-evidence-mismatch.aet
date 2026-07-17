@@ -1,0 +1,22 @@
+// BREAKER 009 — Evidence mismatch: wrong evidence kind for policy
+// Policy requires HumanReview but only SignedAttestation provided
+// Expected: AE-EPISTEMIC-003 or type error
+
+struct Order { id: string, total: int }
+
+fn bad_evidence(c: Claim<Order>) -> int
+uses Payment:
+    {
+        let v = verify(c, OrderPolicy);
+        return payment.charge(v);
+    }
+
+effect Payment {
+    fn charge(order: Verified<Order, OrderPolicy>) -> int
+}
+
+policy OrderPolicy {
+    Order: Order {
+        evidence HumanReview "requires human sign-off"
+    }
+}

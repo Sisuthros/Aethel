@@ -548,8 +548,8 @@ fn check_expr_for_epistemic_violations(
                 check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
         }
-        // verify(claim, Policy) - check that policy exists
-        Expr::Verify { policy, span, .. } => {
+        // verify(claim, Policy) - check claim is Claim<T> and policy exists
+        Expr::Verify { claim, policy, span } => {
             let policy_name = policy.segments.first().map(|s| s.name.name.as_str()).unwrap_or("");
             if !policy_name.is_empty() && !ctx.policy_registry.policies.contains_key(policy_name) {
                 ctx.error(
@@ -558,6 +558,29 @@ fn check_expr_for_epistemic_violations(
                     *span,
                 );
             }
+            // verify() first argument must be a Claim variable
+            match claim.as_ref() {
+                Expr::Path { path, .. } => {
+                    let name = path.segments.last().map(|s| s.name.name.as_str()).unwrap_or("");
+                    if let Some(var_info) = ctx.type_env.get_variable(name) {
+                        if !matches!(var_info.ty, IrType::Claim { .. }) {
+                            ctx.error(
+                                aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                                &format!("verify() expects Claim<T>, not a bare value"),
+                                *span,
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    ctx.error(
+                        aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                        &format!("verify() expects a Claim variable as argument"),
+                        *span,
+                    );
+                }
+            }
+            check_expr_for_epistemic_violations(ctx, claim, declared_effects);
         }
         Expr::Tuple { exprs, .. } => {
             for e in exprs {
