@@ -1,0 +1,24 @@
+// BREAKER 020 — Nested block scope escape: Claim defined in inner block,
+// used in outer block without verify
+// Expected: AE-EPISTEMIC-001
+
+struct D { v: int }
+
+fn scope_escape() -> int
+uses Single:
+    {
+        let x: Claim<D>;
+        {
+            let c: Claim<D> = x;
+            x = c;
+        }
+        return single.do_it(x);
+    }
+
+effect Single {
+    fn do_it(d: Verified<D, DPolicy>) -> int
+}
+
+policy DPolicy {
+    D: D { evidence SignedAttestation "test" }
+}

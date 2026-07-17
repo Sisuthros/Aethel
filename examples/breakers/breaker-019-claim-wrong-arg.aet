@@ -1,0 +1,16 @@
+// BREAKER 019 — Claim passed to effect as non-first argument
+// Effect fn verify(arg: Verified<T>, extra: int) — Claim in wrong position
+
+struct D { v: int }
+
+fn claim_in_wrong_arg(c: Claim<D>) -> int
+uses Multi:
+    { return multi.check(42, c); }
+
+effect Multi {
+    fn check(extra: int, data: Verified<D, DPolicy>) -> int
+}
+
+policy DPolicy {
+    D: D { evidence SignedAttestation "test" }
+}

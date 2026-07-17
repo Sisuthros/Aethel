@@ -1,0 +1,7 @@
+// BREAKER 016 — Unused Claim variable (linearity test)
+// Expected: AE-LINEAR-001 (linear type not consumed) if linear types enforced
+
+fn unused_claim(c: Claim<int>) -> int {
+    let x = 42;
+    return x;
+}
