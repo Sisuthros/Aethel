@@ -475,10 +475,24 @@ fn check_expr_for_epistemic_violations(
             };
 
             if let Some(op) = found_effect_op {
-                // Clone op details to avoid borrowing ctx twice
                 let op_params = op.params.clone();
                 let op_name = op.name.clone();
-                drop(found_effect_op);
+                let effect_name = receiver_name.map(|s| s.to_string()).unwrap_or_default();
+                let expected_args = op_params.len();
+                drop(op);
+
+                // TYPE CHECK: argument count matches parameter count (before borrow issues)
+                if args.len() != expected_args {
+                    ctx.error(
+                        aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                        &format!(
+                            "effect `{}.{}` expects {} argument(s), got {}",
+                            effect_name, method.name, expected_args, args.len()
+                        ),
+                        *span,
+                    );
+                }
+
                 // Check each argument against the operation's parameter types
                 for (i, arg) in args.iter().enumerate() {
                     if i < op_params.len() {
