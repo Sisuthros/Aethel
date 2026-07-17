@@ -5,7 +5,7 @@ use aethel_ir::lower::*;
 use aethel_syntax::diagnostic::{Diagnostics, DiagnosticCode, DiagnosticSeverity};
 use aethel_syntax::span::{FileId, Span};
 use aethel_effects::EffectRegistry;
-use crate::types::HirExprSpan;
+use crate::types::{HirExprSpan, check_assignable};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -16,6 +16,7 @@ pub struct CheckContext {
     pub effect_registry: EffectRegistry,
     pub type_env: TypeEnvironment,
     pub policy_registry: PolicyRegistry,
+    pub current_fn_return_type: Option<IrType>,
 }
 
 /// Type environment for checking with proper scoping.
@@ -107,6 +108,7 @@ impl CheckContext {
             effect_registry: EffectRegistry::default(),
             type_env: TypeEnvironment::default(),
             policy_registry: PolicyRegistry::default(),
+            current_fn_return_type: None,
         }
     }
 
@@ -319,6 +321,9 @@ fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Mo
 
     for item in &module.items {
         if let Item::Fn(f) = item {
+            // Set current function's return type for checking return statements
+            ctx.current_fn_return_type = f.ret_type.as_ref().map(|t| ir_type_from_ast_type(t));
+
             ctx.type_env.enter_scope();
             // Add parameters to type environment
             for param in &f.params {
@@ -335,6 +340,7 @@ fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Mo
                 check_block_for_epistemic_violations(ctx, body, &f.effects.effects);
             }
             ctx.type_env.exit_scope();
+            ctx.current_fn_return_type = None;
         }
     }
 }
@@ -353,8 +359,24 @@ fn check_block_for_epistemic_violations(
             Stmt::Expr { expr, .. } => {
                 check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
-            Stmt::Return { expr, .. } => {
-                if let Some(expr) = expr {
+            Stmt::Return { expr, span, .. } => {
+                // TYPE CHECK: return expression vs function return type
+                if let (Some(ret_ty), Some(ret_expr)) = (&ctx.current_fn_return_type, expr) {
+                    let deref: &aethel_syntax::ast::Expr = ret_expr;
+                    if let Expr::Path { path, .. } = deref {
+                        let name = path.segments.last().map(|s| s.name.name.as_str()).unwrap_or("");
+                        if let Some(var_info) = ctx.type_env.variables.get(name) {
+                            if let Err(msg) = check_assignable(&var_info.ty, ret_ty) {
+                                ctx.error(
+                                    aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                                    &format!("type mismatch in `return`: {}", msg),
+                                    *span,
+                                );
+                            }
+                        }
+                    }
+                    check_expr_for_epistemic_violations(ctx, ret_expr, declared_effects);
+                } else if let Some(expr) = expr {
                     check_expr_for_epistemic_violations(ctx, expr, declared_effects);
                 }
             }
@@ -619,6 +641,15 @@ fn infer_expr_return_type(
                         .and_then(|op| op.ret_type.clone())
                 })
             })
+        }
+        // Path expression: look up variable type from environment
+        Expr::Path { path, .. } => {
+            let name = path.segments.last().map(|s| s.name.name.as_str()).unwrap_or("");
+            if let Some(var_info) = ctx.type_env.variables.get(name) {
+                Some(var_info.ty.clone())
+            } else {
+                None
+            }
         }
         _ => None,
     }
