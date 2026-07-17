@@ -534,6 +534,17 @@ fn check_expr_for_epistemic_violations(
                 check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
         }
+        // verify(claim, Policy) - check that policy exists
+        Expr::Verify { policy, span, .. } => {
+            let policy_name = policy.segments.first().map(|s| s.name.name.as_str()).unwrap_or("");
+            if !policy_name.is_empty() && !ctx.policy_registry.policies.contains_key(policy_name) {
+                ctx.error(
+                    aethel_syntax::diagnostic::codes::UNDEFINED_TYPE(),
+                    &format!("policy `{policy_name}` is not defined"),
+                    *span,
+                );
+            }
+        }
         Expr::Tuple { exprs, .. } => {
             for e in exprs {
                 check_expr_for_epistemic_violations(ctx, e, declared_effects);
@@ -559,8 +570,14 @@ fn infer_expr_return_type(
 ) -> Option<IrType> {
     use aethel_syntax::ast::Expr;
     match expr {
-        // verify(claim, Policy) -> Verified<T, Policy>
+        // verify(claim, Policy) - check that policy exists before inferring type
         Expr::Verify { claim, policy, span } => {
+            // First verify the policy exists
+            let policy_name = policy.segments.first()
+                .map(|s| s.name.name.as_str()).unwrap_or("").to_string();
+            if !policy_name.is_empty() && !ctx.policy_registry.policies.contains_key(&policy_name) {
+                return None;
+            }
             // Get the inner type T from Claim<T>
             if let Expr::Path { path: claim_path, .. } = claim.as_ref() {
                 if let Some(claim_name) = claim_path.segments.first().map(|s| s.name.name.as_str()) {
@@ -621,25 +638,27 @@ fn infer_expr_return_type(
             })
         }
         // Method calls on effects: look up return type from effect registry
-        Expr::MethodCall { receiver, method, span, .. } => {
+        Expr::MethodCall { receiver, method, .. } => {
             let receiver_name = if let Expr::Path { path, .. } = receiver.as_ref() {
                 path.segments.first().map(|s| s.name.name.as_str())
             } else {
                 None
             };
-            receiver_name.and_then(|rname| {
-                // Look up the effect operation return type
-                // Check declared effects first, then registered
-                let is_declared = declared_effects.iter().any(|e| {
-                    e.path.segments.first().map(|s| s.name.name.as_str() == rname).unwrap_or(false)
-                });
-                if !is_declared {
-                    return None;
-                }
+            // Try to find the effect by receiver name; if not found, search all effects by operation name
+            let result = receiver_name.and_then(|rname| {
                 ctx.effect_registry.get(rname).and_then(|ef| {
                     ef.operations.iter().find(|o| o.name == method.name)
                         .and_then(|op| op.ret_type.clone())
                 })
+            });
+            // Fallback: search all registered effects by operation name
+            result.or_else(|| {
+                for (_, ef) in &ctx.effect_registry.effects {
+                    if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
+                        return op.ret_type.clone();
+                    }
+                }
+                None
             })
         }
         // Path expression: look up variable type from environment
