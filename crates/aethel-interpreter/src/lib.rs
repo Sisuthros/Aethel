@@ -1,5 +1,8 @@
-//! Interpreter for Aethel IR.
+//! Fail-closed interpreter for validated Aethel IR.
 
-pub mod eval;
+// The symbolic interpreter prioritizes explicit fail-closed semantics while
+// production effect handlers remain outside this crate.
 
-pub use eval::*;
+pub mod sound_eval;
+pub use sound_eval as eval;
+pub use sound_eval::*;

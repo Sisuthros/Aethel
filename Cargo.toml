@@ -45,10 +45,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [workspace.lints]
-clippy.all = "deny"
-clippy.pedantic = "warn"
-clippy.nursery = "warn"
-clippy.cargo = "warn"
+clippy.all = { level = "deny", priority = -1 }
+clippy.pedantic = { level = "warn", priority = -1 }
+clippy.nursery = { level = "warn", priority = -1 }
+clippy.cargo = { level = "warn", priority = -1 }
 clippy.unwrap_used = "deny"
 clippy.expect_used = "deny"
 clippy.panic = "deny"

@@ -1,0 +1,10 @@
+// TEST: AuditService resolves through snake_case alias (audit_service)
+// Expected: compilation passes
+
+effect AuditService {
+    fn run(data: Claim<int>) -> int
+}
+
+fn use_snake_case(c: Claim<int>) -> int
+uses AuditService:
+    { return audit_service.run(c); }

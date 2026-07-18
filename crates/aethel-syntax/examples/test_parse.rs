@@ -11,12 +11,12 @@ uses PaymentGateway:
     for t in &tokens {
         println!("  {:?}", t.kind);
     }
-    
+
     let (module, diagnostics) = parse(&tokens, FileId::new(0));
     println!("\nDiagnostics has_errors: {}", diagnostics.has_errors());
     for d in diagnostics.errors() {
         println!("  {:?}", d);
     }
-    
+
     println!("\nModule items: {:?}", module.items);
 }

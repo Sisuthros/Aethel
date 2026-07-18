@@ -1,8 +1,8 @@
 //! Model adapter trait.
 
 use aethel_ir::lower::{IrExpr, IrExprPath, IrType};
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 /// Adapter for model providers (LLMs, etc.).
 #[async_trait]
@@ -23,6 +23,12 @@ pub trait ModelAdapter: Send + Sync {
 /// Registry of model adapters.
 pub struct ModelRegistry {
     adapters: std::collections::HashMap<String, Box<dyn ModelAdapter>>,
+}
+
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ModelRegistry {
