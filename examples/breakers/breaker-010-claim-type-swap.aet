@@ -1,0 +1,14 @@
+// BREAKER 010 — Claim type swap: Claim<int> passed as Claim<string>
+// Expected: AE-TYPE-001 type mismatch
+
+fn type_swap(c: Claim<int>) -> string
+uses Print:
+    { return print.log(c); }
+
+effect Print {
+    fn log(value: Verified<string, StringPolicy>) -> string
+}
+
+policy StringPolicy {
+    Str: string { evidence SignedAttestation "test" }
+}

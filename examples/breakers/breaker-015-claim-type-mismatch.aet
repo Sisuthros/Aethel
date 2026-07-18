@@ -1,0 +1,6 @@
+// BREAKER 015 — Assign Claim<X> to Claim<Y> (different inner types)
+// Expected: AE-TYPE-001
+
+fn claim_type_mismatch(c: Claim<int>) -> Claim<string> {
+    return c;
+}

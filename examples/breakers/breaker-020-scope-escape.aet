@@ -1,0 +1,20 @@
+// BREAKER 020 — Scope escape: Claim variable passed directly to effect
+// without being verified first in the current scope
+// Expected: AE-EPISTEMIC-001 (unverified Claim cannot authorize effect)
+
+struct D { v: int }
+
+fn scope_escape(c: Claim<D>) -> int
+uses Single:
+    {
+        // Claim c is in scope but used directly without verify
+        return single.do_it(c);
+    }
+
+effect Single {
+    fn do_it(d: Verified<D, DPolicy>) -> int
+}
+
+policy DPolicy {
+    D: D { evidence SignedAttestation "test" }
+}
