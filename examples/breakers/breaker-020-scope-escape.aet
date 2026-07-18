@@ -1,14 +1,18 @@
-// BREAKER 020 — Scope escape: Claim variable passed directly to effect
-// without being verified first in the current scope
-// Expected: AE-EPISTEMIC-001 (unverified Claim cannot authorize effect)
+// BREAKER 020 — Nested block scope escape: Claim defined in inner block,
+// used in outer block without verify
+// Expected: AE-EPISTEMIC-001
 
 struct D { v: int }
 
-fn scope_escape(c: Claim<D>) -> int
+fn scope_escape() -> int
 uses Single:
     {
-        // Claim c is in scope but used directly without verify
-        return single.do_it(c);
+        let x: Claim<D>;
+        {
+            let c: Claim<D> = x;
+            x = c;
+        }
+        return single.do_it(x);
     }
 
 effect Single {
