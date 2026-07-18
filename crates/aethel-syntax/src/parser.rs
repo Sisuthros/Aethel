@@ -480,18 +480,18 @@ impl<'a> Parser<'a> {
             if self.eat(TokenKind::Semi) {
                 continue;
             }
-            
+
             // Each operation starts with `fn`
             if !self.check(TokenKind::KwFn) {
                 // Skip unexpected token inside effect body
                 self.advance();
                 continue;
             }
-            
+
             let op_start = self.current_span();
             self.eat(TokenKind::KwFn);
             let op_name = self.parse_ident()?;
-            
+
             // Parameters
             self.expect(TokenKind::LParen, "expected `(` after operation name")?;
             let mut params = Vec::new();
@@ -511,14 +511,14 @@ impl<'a> Parser<'a> {
                 });
             }
             self.expect(TokenKind::RParen, "expected `)`")?;
-            
+
             // Return type
             let ret_type = if self.eat(TokenKind::Arrow) {
                 Some(self.parse_type()?)
             } else {
                 None
             };
-            
+
             let op_end = self.previous_span();
             operations.push(EffectOperation {
                 span: op_start.merge(op_end),
@@ -527,7 +527,7 @@ impl<'a> Parser<'a> {
                 ret_type,
             });
         }
-        
+
         self.expect(TokenKind::RBrace, "expected `}`")?;
 
         let end = self.previous_span();
@@ -613,38 +613,42 @@ impl<'a> Parser<'a> {
         };
 
         let effects = if self.eat(TokenKind::KwUses) {
-                    let effect_start = self.current_span();
-                    let mut effects = Vec::new();
-                    while !self.check(TokenKind::LBrace) 
-                        && !self.check(TokenKind::Colon)
-                        && !self.check(TokenKind::Semi)
-                        && !self.is_at_end() {
-                        effects.push(self.parse_effect_ref()?);
-                        if !self.eat(TokenKind::Comma) {
-                            break;
-                        }
-                    }
-                    let effect_end = self.previous_span();
-                    EffectSet {
-                        span: effect_start.merge(effect_end),
-                        effects,
-                    }
-                } else {
-                    EffectSet::default()
-                };
+            let effect_start = self.current_span();
+            let mut effects = Vec::new();
+            while !self.check(TokenKind::LBrace)
+                && !self.check(TokenKind::Colon)
+                && !self.check(TokenKind::Semi)
+                && !self.is_at_end()
+            {
+                effects.push(self.parse_effect_ref()?);
+                if !self.eat(TokenKind::Comma) {
+                    break;
+                }
+            }
+            let effect_end = self.previous_span();
+            EffectSet {
+                span: effect_start.merge(effect_end),
+                effects,
+            }
+        } else {
+            EffectSet::default()
+        };
 
         let body = {
-                    // Consume optional colon before function body
-                    if self.eat(TokenKind::Colon) {
-                        // colon consumed
-                    }
-                    if self.eat(TokenKind::LBrace) {
-                        Some(self.parse_block()?)
-                    } else {
-                        self.expect(TokenKind::Semi, "expected `;` or `{` after function signature")?;
-                        None
-                    }
-                };
+            // Consume optional colon before function body
+            if self.eat(TokenKind::Colon) {
+                // colon consumed
+            }
+            if self.eat(TokenKind::LBrace) {
+                Some(self.parse_block()?)
+            } else {
+                self.expect(
+                    TokenKind::Semi,
+                    "expected `;` or `{` after function signature",
+                )?;
+                None
+            }
+        };
 
         let end = self.previous_span();
         Some(FnDef {
@@ -1111,9 +1115,7 @@ impl<'a> Parser<'a> {
             TokenKind::OrOr => Precedence::Or,
             TokenKind::AndAnd => Precedence::And,
             TokenKind::EqEq | TokenKind::Ne => Precedence::Equality,
-            TokenKind::Lt | TokenKind::Gt | TokenKind::Le | TokenKind::Ge => {
-                Precedence::Comparison
-            }
+            TokenKind::Lt | TokenKind::Gt | TokenKind::Le | TokenKind::Ge => Precedence::Comparison,
             TokenKind::Plus | TokenKind::Minus => Precedence::Term,
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Factor,
             TokenKind::Bang | TokenKind::Minus | TokenKind::Star => Precedence::Unary,
@@ -1227,7 +1229,7 @@ impl<'a> Parser<'a> {
         }
 
         // Struct literal
-                if self.check_ident() && self.peek(1).map_or(false, |t| t.kind == TokenKind::LBrace) {
+        if self.check_ident() && self.peek(1).map_or(false, |t| t.kind == TokenKind::LBrace) {
             let ident = self.parse_ident()?;
             let path = TypePath::single(ident.span, ident);
             return self.parse_struct_expr(path, start);
@@ -1781,41 +1783,41 @@ impl<'a> Parser<'a> {
         }
 
         // Function type
-                if self.eat(TokenKind::KwFn) {
-                    self.expect(TokenKind::LParen, "expected `(`")?;
-                    let mut params = Vec::new();
-                    while !self.check(TokenKind::RParen) && !self.is_at_end() {
-                        params.push(self.parse_type()?);
-                        if !self.eat(TokenKind::Comma) {
-                            break;
-                        }
-                    }
-                    self.expect(TokenKind::RParen, "expected `)`")?;
-                    self.expect(TokenKind::Arrow, "expected `->`")?;
-                    let ret = self.parse_type()?;
-                    let effects = if self.eat(TokenKind::KwUses) {
-                        let mut effects = Vec::new();
-                        while !self.check(TokenKind::LBrace) && !self.is_at_end() {
-                            effects.push(self.parse_effect_ref()?);
-                            if !self.eat(TokenKind::Comma) {
-                                break;
-                            }
-                        }
-                        EffectSet {
-                            span: self.previous_span(),
-                            effects,
-                        }
-                    } else {
-                        EffectSet::default()
-                    };
-                    let end = self.previous_span();
-                    return Some(Type::Fn {
-                        span: start.merge(end),
-                        params,
-                        ret: Box::new(ret),
-                        effects,
-                    });
+        if self.eat(TokenKind::KwFn) {
+            self.expect(TokenKind::LParen, "expected `(`")?;
+            let mut params = Vec::new();
+            while !self.check(TokenKind::RParen) && !self.is_at_end() {
+                params.push(self.parse_type()?);
+                if !self.eat(TokenKind::Comma) {
+                    break;
                 }
+            }
+            self.expect(TokenKind::RParen, "expected `)`")?;
+            self.expect(TokenKind::Arrow, "expected `->`")?;
+            let ret = self.parse_type()?;
+            let effects = if self.eat(TokenKind::KwUses) {
+                let mut effects = Vec::new();
+                while !self.check(TokenKind::LBrace) && !self.is_at_end() {
+                    effects.push(self.parse_effect_ref()?);
+                    if !self.eat(TokenKind::Comma) {
+                        break;
+                    }
+                }
+                EffectSet {
+                    span: self.previous_span(),
+                    effects,
+                }
+            } else {
+                EffectSet::default()
+            };
+            let end = self.previous_span();
+            return Some(Type::Fn {
+                span: start.merge(end),
+                params,
+                ret: Box::new(ret),
+                effects,
+            });
+        }
 
         // Array type
         if self.eat(TokenKind::LBracket) {
@@ -2043,10 +2045,7 @@ impl<'a> Parser<'a> {
         let span = token.span;
 
         let lit = match token.kind {
-            TokenKind::String(s) => Literal::String {
-                span,
-                value: s,
-            },
+            TokenKind::String(s) => Literal::String { span, value: s },
             TokenKind::Int(i) => Literal::Int { span, value: i },
             TokenKind::Float(f) => Literal::Float { span, value: f },
             TokenKind::Bool(b) => Literal::Bool { span, value: b },
@@ -2068,17 +2067,17 @@ impl<'a> Parser<'a> {
     }
 
     fn current_token(&self) -> &Token {
-            self.tokens
-                .get(self.current)
-                .unwrap_or_else(|| EMPTY_TOKEN.get_or_init(|| {
-                    Token::new(
-                        TokenKind::Ident(String::new()),
-                        Span::new(FileId::new(0), ByteOffset(0), ByteOffset(0)),
-                    )
-                }))
-        }
+        self.tokens.get(self.current).unwrap_or_else(|| {
+            EMPTY_TOKEN.get_or_init(|| {
+                Token::new(
+                    TokenKind::Ident(String::new()),
+                    Span::new(FileId::new(0), ByteOffset(0), ByteOffset(0)),
+                )
+            })
+        })
+    }
 
-        fn peek(&self, offset: usize) -> Option<&Token> {
+    fn peek(&self, offset: usize) -> Option<&Token> {
         self.tokens.get(self.current + offset)
     }
 
@@ -2110,14 +2109,15 @@ impl<'a> Parser<'a> {
     }
 
     fn check(&self, kind: TokenKind) -> bool {
-            !self.is_at_end() && std::mem::discriminant(&self.current_token().kind) == std::mem::discriminant(&kind)
-        }
+        !self.is_at_end()
+            && std::mem::discriminant(&self.current_token().kind) == std::mem::discriminant(&kind)
+    }
 
-        fn check_ident(&self) -> bool {
-            !self.is_at_end() && self.current_token().kind.is_ident()
-        }
+    fn check_ident(&self) -> bool {
+        !self.is_at_end() && self.current_token().kind.is_ident()
+    }
 
-        fn eat(&mut self, kind: TokenKind) -> bool {
+    fn eat(&mut self, kind: TokenKind) -> bool {
         if self.check(kind) {
             self.advance();
             true
@@ -2141,7 +2141,9 @@ impl<'a> Parser<'a> {
 
     fn error(&mut self, code: crate::diagnostic::DiagnosticCode, message: &str) {
         let span = self.current_span();
-        let diag = DiagnosticBuilder::error(code, message).primary_label(span, "here").build();
+        let diag = DiagnosticBuilder::error(code, message)
+            .primary_label(span, "here")
+            .build();
         self.diagnostics.push(diag);
     }
 
@@ -2194,15 +2196,15 @@ fn main() -> int {
     }
 
     #[test]
-        fn test_parse_claim_verified() {
-            let source = r#"
+    fn test_parse_claim_verified() {
+        let source = r#"
     fn refund(claim: Claim<RefundDecision>) -> Receipt
     uses PaymentGateway:
         { return payments.refund(claim); }
     "#;
-            let tokens = lex(source, FileId::new(0));
-            let (module, diagnostics) = parse(&tokens, FileId::new(0));
-            // Should parse without syntax errors
-            assert!(!diagnostics.has_errors());
-        }
+        let tokens = lex(source, FileId::new(0));
+        let (module, diagnostics) = parse(&tokens, FileId::new(0));
+        // Should parse without syntax errors
+        assert!(!diagnostics.has_errors());
     }
+}

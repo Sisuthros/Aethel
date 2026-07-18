@@ -102,19 +102,32 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
         for diag in check_diagnostics.errors() {
             eprintln!("  {} at {}", diag.code.to_string().red(), diag.message);
             for label in &diag.labels {
-                eprintln!("    --> {}.{}:{}", file.display(), label.span.start.0, label.span.end.0);
+                eprintln!(
+                    "    --> {}.{}:{}",
+                    file.display(),
+                    label.span.start.0,
+                    label.span.end.0
+                );
             }
         }
         std::process::exit(1);
     }
 
     if check_diagnostics.warnings().is_empty() {
-        println!("{} {}", "✓".green(), format!("{} type checks", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} type checks", file.display()).green()
+        );
     } else {
         for warn in check_diagnostics.warnings() {
             eprintln!("{} {}", "warning:".yellow(), warn.message);
         }
-        println!("{} {}", "✓".green(), format!("{} type checks (with warnings)", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} type checks (with warnings)", file.display()).green()
+        );
     }
 
     Ok((ir_module, file_id))
@@ -137,10 +150,7 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
 
 /// Convert a checked IrModule to a deterministic JSON value.
 /// This is the sole source of truth for emit-ir output.
-fn ir_module_to_json(
-    module: &aethel_ir::lower::IrModule,
-    file: &PathBuf,
-) -> serde_json::Value {
+fn ir_module_to_json(module: &aethel_ir::lower::IrModule, file: &PathBuf) -> serde_json::Value {
     use aethel_ir::lower::*;
 
     let source = std::fs::read_to_string(file).unwrap_or_default();
@@ -148,7 +158,7 @@ fn ir_module_to_json(
     let mut functions = Vec::new();
     let mut effects = Vec::new();
     let mut policies = Vec::new();
-    let mut types = Vec::new();  // struct/enum definitions
+    let mut types = Vec::new(); // struct/enum definitions
 
     for item in &module.items {
         match item {
@@ -162,7 +172,10 @@ fn ir_module_to_json(
                 }
                 let mut effect_names: Vec<String> = Vec::new();
                 for ef in &f.effects.effects {
-                    let name = ef.path.segments.last()
+                    let name = ef
+                        .path
+                        .segments
+                        .last()
                         .map(|s| s.name.clone())
                         .unwrap_or_default();
                     effect_names.push(name);
@@ -178,7 +191,9 @@ fn ir_module_to_json(
             IrItem::Policy(p) => {
                 let mut claims = Vec::new();
                 for c in &p.claims {
-                    let ev: Vec<String> = c.evidence.iter()
+                    let ev: Vec<String> = c
+                        .evidence
+                        .iter()
                         .map(|ev| format!("{:?}", ev.kind))
                         .collect();
                     claims.push(serde_json::json!({
@@ -240,10 +255,30 @@ fn ir_module_to_json(
     }
 
     // Sort deterministically for stable output
-    functions.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    effects.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    policies.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    types.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
+    functions.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    effects.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    policies.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    types.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
 
     serde_json::json!({
         "ir_version": "0.1",
@@ -269,14 +304,42 @@ fn ir_type_to_string(ty: &aethel_ir::lower::IrType) -> String {
         IrType::Int { .. } => "int".into(),
         IrType::Float { .. } => "float".into(),
         IrType::String { .. } => "string".into(),
-        IrType::Path { path, .. } => path.segments.iter().map(|s| s.name.clone()).collect::<Vec<_>>().join("::"),
+        IrType::Path { path, .. } => path
+            .segments
+            .iter()
+            .map(|s| s.name.clone())
+            .collect::<Vec<_>>()
+            .join("::"),
         IrType::Claim { ty, .. } => format!("Claim<{}>", ir_type_to_string(ty)),
-        IrType::Verified { ty, policy, .. } => format!("Verified<{}, {}>", ir_type_to_string(ty), ir_type_to_string(policy)),
-        IrType::Ref { is_mut, ty, .. } => format!("&{}{}", if *is_mut { "mut " } else { "" }, ir_type_to_string(ty)),
+        IrType::Verified { ty, policy, .. } => format!(
+            "Verified<{}, {}>",
+            ir_type_to_string(ty),
+            ir_type_to_string(policy)
+        ),
+        IrType::Ref { is_mut, ty, .. } => format!(
+            "&{}{}",
+            if *is_mut { "mut " } else { "" },
+            ir_type_to_string(ty)
+        ),
         IrType::Owned { ty, .. } => format!("owned {}", ir_type_to_string(ty)),
-        IrType::Tuple { types, .. } => format!("({})", types.iter().map(ir_type_to_string).collect::<Vec<_>>().join(", ")),
+        IrType::Tuple { types, .. } => format!(
+            "({})",
+            types
+                .iter()
+                .map(ir_type_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         IrType::Array { ty, .. } => format!("[{}]", ir_type_to_string(ty)),
-        IrType::Fn { params, ret, .. } => format!("fn({}) -> {}", params.iter().map(ir_type_to_string).collect::<Vec<_>>().join(", "), ir_type_to_string(ret)),
+        IrType::Fn { params, ret, .. } => format!(
+            "fn({}) -> {}",
+            params
+                .iter()
+                .map(ir_type_to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            ir_type_to_string(ret)
+        ),
     }
 }
 
@@ -295,7 +358,11 @@ fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
     if result.policy_violations.is_empty() {
         println!("  {} {}", "✓".green(), "No policy violations".green());
     } else {
-        println!("  {} {} policy violation(s):", "✗".red().bold(), result.policy_violations.len());
+        println!(
+            "  {} {} policy violation(s):",
+            "✗".red().bold(),
+            result.policy_violations.len()
+        );
         for v in &result.policy_violations {
             println!("    • {}", v.red());
         }
@@ -306,7 +373,11 @@ fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
         println!();
         println!("{}", "── Effect Trace ──".bold());
         for (i, trace) in result.effect_trace.iter().enumerate() {
-            let status = if trace.was_verified { "✓".green() } else { "✗".red() };
+            let status = if trace.was_verified {
+                "✓".green()
+            } else {
+                "✗".red()
+            };
             println!("  {}. {} effect `{}`", i + 1, status, trace.effect_name);
             if let Some(err) = &trace.error {
                 println!("     {}", err.yellow());
@@ -337,9 +408,17 @@ fn fmt_file(file: &PathBuf, check: bool) -> anyhow::Result<()> {
     }
 
     if check {
-        println!("{} {}", "✓".green(), format!("{} is formatted", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} is formatted", file.display()).green()
+        );
     } else {
-        println!("{} {}", "✓".green(), format!("{} formatted", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} formatted", file.display()).green()
+        );
     }
 
     Ok(())

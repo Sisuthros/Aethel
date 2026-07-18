@@ -24,29 +24,51 @@ impl TypedExpr {
 /// Check if a value type can be assigned to a target type.
 pub fn check_assignable(value_ty: &IrType, target_ty: &IrType) -> Result<(), String> {
     match (value_ty, target_ty) {
-        (IrType::Unit { .. }, IrType::Unit { .. }) | (IrType::Bool { .. }, IrType::Bool { .. }) |
-        (IrType::Int { .. }, IrType::Int { .. }) | (IrType::Float { .. }, IrType::Float { .. }) |
-        (IrType::String { .. }, IrType::String { .. }) => Ok(()),
+        (IrType::Unit { .. }, IrType::Unit { .. })
+        | (IrType::Bool { .. }, IrType::Bool { .. })
+        | (IrType::Int { .. }, IrType::Int { .. })
+        | (IrType::Float { .. }, IrType::Float { .. })
+        | (IrType::String { .. }, IrType::String { .. }) => Ok(()),
         (IrType::Never { .. }, _) => Ok(()),
         (IrType::Path { path: p1, .. }, IrType::Path { path: p2, .. }) => {
             let n1 = p1.segments.last().map(|s| s.name.as_str()).unwrap_or("");
             let n2 = p2.segments.last().map(|s| s.name.as_str()).unwrap_or("");
-            if n1 == n2 { Ok(()) } else { Err(format!("expected `{n2}`, got `{n1}`")) }
+            if n1 == n2 {
+                Ok(())
+            } else {
+                Err(format!("expected `{n2}`, got `{n1}`"))
+            }
         }
         (IrType::Claim { ty: v, .. }, IrType::Claim { ty: t, .. }) => check_assignable(v, t),
-        (IrType::Claim { .. }, IrType::Verified { .. }) =>
-            Err("unverified claim cannot cross effect boundary".into()),
-        (IrType::Verified { ty: v, policy: vp, .. }, IrType::Verified { ty: t, policy: tp, .. }) => {
+        (IrType::Claim { .. }, IrType::Verified { .. }) => {
+            Err("unverified claim cannot cross effect boundary".into())
+        }
+        (
+            IrType::Verified {
+                ty: v, policy: vp, ..
+            },
+            IrType::Verified {
+                ty: t, policy: tp, ..
+            },
+        ) => {
             check_assignable(v, t)?;
             let vpn = match vp.as_ref() {
-                IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                IrType::Path { path, .. } => {
+                    path.segments.last().map(|s| s.name.as_str()).unwrap_or("")
+                }
                 _ => "",
             };
             let tpn = match tp.as_ref() {
-                IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                IrType::Path { path, .. } => {
+                    path.segments.last().map(|s| s.name.as_str()).unwrap_or("")
+                }
                 _ => "",
             };
-            if vpn == tpn { Ok(()) } else { Err(format!("policy mismatch: `{vpn}` vs `{tpn}`")) }
+            if vpn == tpn {
+                Ok(())
+            } else {
+                Err(format!("policy mismatch: `{vpn}` vs `{tpn}`"))
+            }
         }
         _ => Err(format!("cannot assign: {}", type_to_string(value_ty))),
     }
@@ -55,8 +77,9 @@ pub fn check_assignable(value_ty: &IrType, target_ty: &IrType) -> Result<(), Str
 /// Check if an argument type matches an effect operation parameter type.
 pub fn check_effect_arg(arg_ty: &IrType, param_ty: &IrType) -> Result<(), String> {
     match (arg_ty, param_ty) {
-        (IrType::Claim { .. }, IrType::Verified { .. }) =>
-            Err("unverified claim cannot authorize effect".into()),
+        (IrType::Claim { .. }, IrType::Verified { .. }) => {
+            Err("unverified claim cannot authorize effect".into())
+        }
         _ => check_assignable(arg_ty, param_ty),
     }
 }
@@ -64,13 +87,26 @@ pub fn check_effect_arg(arg_ty: &IrType, param_ty: &IrType) -> Result<(), String
 /// Human-readable type name for error messages.
 pub fn type_to_string(ty: &IrType) -> String {
     match ty {
-        IrType::Unit { .. } => "()".into(), IrType::Never { .. } => "!".into(), IrType::Bool { .. } => "bool".into(),
-        IrType::Int { .. } => "int".into(), IrType::Float { .. } => "float".into(), IrType::String { .. } => "string".into(),
-        IrType::Path { path, .. } =>
-            path.segments.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join("::"),
+        IrType::Unit { .. } => "()".into(),
+        IrType::Never { .. } => "!".into(),
+        IrType::Bool { .. } => "bool".into(),
+        IrType::Int { .. } => "int".into(),
+        IrType::Float { .. } => "float".into(),
+        IrType::String { .. } => "string".into(),
+        IrType::Path { path, .. } => path
+            .segments
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join("::"),
         IrType::Claim { ty: inner, .. } => format!("Claim<{}>", type_to_string(inner)),
-        IrType::Verified { ty: inner, policy, .. } =>
-            format!("Verified<{}, {}>", type_to_string(inner), type_to_string(policy)),
+        IrType::Verified {
+            ty: inner, policy, ..
+        } => format!(
+            "Verified<{}, {}>",
+            type_to_string(inner),
+            type_to_string(policy)
+        ),
         _ => "?".into(),
     }
 }
@@ -85,10 +121,23 @@ pub fn lower_hir_type(ty: &HirType) -> IrType {
         Int { span } => IrType::Int { span: *span },
         Float { span } => IrType::Float { span: *span },
         String { span } => IrType::String { span: *span },
-        Path { span, path } => IrType::Path { span: *span, path: lower_type_path(path) },
-        Ref { span, is_mut, ty } => IrType::Ref { span: *span, is_mut: *is_mut, ty: Box::new(lower_hir_type(ty)) },
-        Owned { span, ty } => IrType::Owned { span: *span, ty: Box::new(lower_hir_type(ty)) },
-        Claim { span, ty } => IrType::Claim { span: *span, ty: Box::new(lower_hir_type(ty)) },
+        Path { span, path } => IrType::Path {
+            span: *span,
+            path: lower_type_path(path),
+        },
+        Ref { span, is_mut, ty } => IrType::Ref {
+            span: *span,
+            is_mut: *is_mut,
+            ty: Box::new(lower_hir_type(ty)),
+        },
+        Owned { span, ty } => IrType::Owned {
+            span: *span,
+            ty: Box::new(lower_hir_type(ty)),
+        },
+        Claim { span, ty } => IrType::Claim {
+            span: *span,
+            ty: Box::new(lower_hir_type(ty)),
+        },
         Verified { span, ty, policy } => IrType::Verified {
             span: *span,
             ty: Box::new(lower_hir_type(ty)),
@@ -99,8 +148,16 @@ pub fn lower_hir_type(ty: &HirType) -> IrType {
             ty: Box::new(lower_hir_type(ty)),
             size: size.as_ref().map(|e| Box::new(lower_hir_expr(e))),
         },
-        Tuple { span, types } => IrType::Tuple { span: *span, types: types.iter().map(lower_hir_type).collect() },
-        Fn { span, params, ret, effects } => IrType::Fn {
+        Tuple { span, types } => IrType::Tuple {
+            span: *span,
+            types: types.iter().map(lower_hir_type).collect(),
+        },
+        Fn {
+            span,
+            params,
+            ret,
+            effects,
+        } => IrType::Fn {
             span: *span,
             params: params.iter().map(lower_hir_type).collect(),
             ret: Box::new(lower_hir_type(ret)),
@@ -114,18 +171,35 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
     use HirExpr::*;
     let span = expr.span();
     match expr {
-        Literal { lit, .. } => IrExpr::Literal { span, lit: lower_literal(lit) },
-        Path { path, .. } => IrExpr::Path { span, path: lower_expr_path(path) },
-        Tuple { exprs, .. } => IrExpr::Tuple { span, exprs: exprs.iter().map(lower_hir_expr).collect() },
-        Array { exprs, .. } => IrExpr::Array { span, exprs: exprs.iter().map(lower_hir_expr).collect() },
-        Struct { path, fields, base, .. } => IrExpr::Struct {
+        Literal { lit, .. } => IrExpr::Literal {
+            span,
+            lit: lower_literal(lit),
+        },
+        Path { path, .. } => IrExpr::Path {
+            span,
+            path: lower_expr_path(path),
+        },
+        Tuple { exprs, .. } => IrExpr::Tuple {
+            span,
+            exprs: exprs.iter().map(lower_hir_expr).collect(),
+        },
+        Array { exprs, .. } => IrExpr::Array {
+            span,
+            exprs: exprs.iter().map(lower_hir_expr).collect(),
+        },
+        Struct {
+            path, fields, base, ..
+        } => IrExpr::Struct {
             span,
             path: lower_type_path(path),
-            fields: fields.iter().map(|f| IrStructExprField {
-                span: f.span,
-                name: f.name.clone(),
-                expr: lower_hir_expr(&f.expr),
-            }).collect(),
+            fields: fields
+                .iter()
+                .map(|f| IrStructExprField {
+                    span: f.span,
+                    name: f.name.clone(),
+                    expr: lower_hir_expr(&f.expr),
+                })
+                .collect(),
             base: base.as_ref().map(|b| Box::new(lower_hir_expr(b))),
         },
         Call { callee, args, .. } => IrExpr::Call {
@@ -133,7 +207,12 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
             callee: Box::new(lower_hir_expr(callee)),
             args: args.iter().map(lower_hir_expr).collect(),
         },
-        MethodCall { receiver, method, args, .. } => IrExpr::MethodCall {
+        MethodCall {
+            receiver,
+            method,
+            args,
+            ..
+        } => IrExpr::MethodCall {
             span,
             receiver: Box::new(lower_hir_expr(receiver)),
             method: method.clone(),
@@ -154,19 +233,28 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
             op: lower_unary_op(op),
             expr: Box::new(lower_hir_expr(expr)),
         },
-        Binary { op, left, right, .. } => IrExpr::Binary {
+        Binary {
+            op, left, right, ..
+        } => IrExpr::Binary {
             span,
             op: lower_binary_op(op),
             left: Box::new(lower_hir_expr(left)),
             right: Box::new(lower_hir_expr(right)),
         },
-        If { cond, then_branch, else_branch, .. } => IrExpr::If {
+        If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => IrExpr::If {
             span,
             cond: Box::new(lower_hir_expr(cond)),
             then_branch: Box::new(lower_hir_expr(then_branch)),
             else_branch: else_branch.as_ref().map(|e| Box::new(lower_hir_expr(e))),
         },
-        Match { scrutinee, arms, .. } => IrExpr::Match {
+        Match {
+            scrutinee, arms, ..
+        } => IrExpr::Match {
             span,
             scrutinee: Box::new(lower_hir_expr(scrutinee)),
             arms: arms.iter().map(lower_match_arm).collect(),
@@ -175,10 +263,19 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
             span,
             block: lower_hir_block(block),
         },
-        Let { pat, ty, is_mut, init, .. } => IrExpr::Let {
+        Let {
+            pat,
+            ty,
+            is_mut,
+            init,
+            ..
+        } => IrExpr::Let {
             span,
             pat: lower_pat(pat),
-            ty: ty.as_ref().map(lower_hir_type).unwrap_or(IrType::Unit { span }),
+            ty: ty
+                .as_ref()
+                .map(lower_hir_type)
+                .unwrap_or(IrType::Unit { span }),
             is_mut: *is_mut,
             init: Box::new(lower_hir_expr(init)),
         },
@@ -191,7 +288,13 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
             expr: expr.as_ref().map(|e| Box::new(lower_hir_expr(e))),
         },
         Continue { span } => IrExpr::Continue { span: *span },
-        Ask { model, goal, input, output_ty, .. } => IrExpr::Ask {
+        Ask {
+            model,
+            goal,
+            input,
+            output_ty,
+            ..
+        } => IrExpr::Ask {
             span,
             model: lower_expr_path(model),
             goal: goal.clone(),
@@ -224,42 +327,72 @@ fn lower_literal(l: &HirLiteral) -> IrLiteral {
     use HirLiteral::*;
     match l {
         Unit { span } => IrLiteral::Unit { span: *span },
-        Bool { span, value } => IrLiteral::Bool { span: *span, value: *value },
-        Int { span, value } => IrLiteral::Int { span: *span, value: *value },
-        Float { span, value } => IrLiteral::Float { span: *span, value: *value },
-        String { span, value } => IrLiteral::String { span: *span, value: value.clone() },
+        Bool { span, value } => IrLiteral::Bool {
+            span: *span,
+            value: *value,
+        },
+        Int { span, value } => IrLiteral::Int {
+            span: *span,
+            value: *value,
+        },
+        Float { span, value } => IrLiteral::Float {
+            span: *span,
+            value: *value,
+        },
+        String { span, value } => IrLiteral::String {
+            span: *span,
+            value: value.clone(),
+        },
     }
 }
 
 fn lower_type_path(p: &HirTypePath) -> IrTypePath {
     IrTypePath {
         span: p.span,
-        segments: p.segments.iter().map(|s| IrPathSegment {
-            span: s.span,
-            name: s.name.clone(),
-            args: s.args.as_ref().map(lower_generic_args),
-        }).collect(),
+        segments: p
+            .segments
+            .iter()
+            .map(|s| IrPathSegment {
+                span: s.span,
+                name: s.name.clone(),
+                args: s.args.as_ref().map(lower_generic_args),
+            })
+            .collect(),
     }
 }
 
 fn lower_expr_path(p: &HirExprPath) -> IrExprPath {
     IrExprPath {
         span: p.span,
-        segments: p.segments.iter().map(|s| IrPathSegment {
-            span: s.span,
-            name: s.name.clone(),
-            args: s.args.as_ref().map(lower_generic_args),
-        }).collect(),
+        segments: p
+            .segments
+            .iter()
+            .map(|s| IrPathSegment {
+                span: s.span,
+                name: s.name.clone(),
+                args: s.args.as_ref().map(lower_generic_args),
+            })
+            .collect(),
     }
 }
 
 fn lower_generic_args(a: &HirGenericArgs) -> IrGenericArgs {
     IrGenericArgs {
         span: a.span,
-        args: a.args.iter().map(|arg| match arg {
-            HirGenericArg::Type { span, ty } => IrGenericArg::Type { span: *span, ty: lower_hir_type(ty) },
-            HirGenericArg::Const { span, expr } => IrGenericArg::Const { span: *span, expr: lower_hir_expr(expr) },
-        }).collect(),
+        args: a
+            .args
+            .iter()
+            .map(|arg| match arg {
+                HirGenericArg::Type { span, ty } => IrGenericArg::Type {
+                    span: *span,
+                    ty: lower_hir_type(ty),
+                },
+                HirGenericArg::Const { span, expr } => IrGenericArg::Const {
+                    span: *span,
+                    expr: lower_hir_expr(expr),
+                },
+            })
+            .collect(),
     }
 }
 
@@ -274,16 +407,36 @@ fn lower_hir_block(b: &HirBlock) -> IrBlock {
 fn lower_hir_stmt(s: &HirStmt) -> IrStmt {
     use HirStmt::*;
     match s {
-        Let { span, name, ty, is_mut, init } => IrStmt::Let {
+        Let {
+            span,
+            name,
+            ty,
+            is_mut,
+            init,
+        } => IrStmt::Let {
             span: *span,
             name: name.clone(),
-            ty: ty.as_ref().map(lower_hir_type).unwrap_or(IrType::Unit { span: *span }),
+            ty: ty
+                .as_ref()
+                .map(lower_hir_type)
+                .unwrap_or(IrType::Unit { span: *span }),
             is_mut: *is_mut,
             init: init.as_ref().map(lower_hir_expr),
         },
-        Expr { span, expr } => IrStmt::Expr { span: *span, expr: lower_hir_expr(expr) },
-        Return { span, expr } => IrStmt::Return { span: *span, expr: expr.as_ref().map(lower_hir_expr) },
-        If { span, cond, then_branch, else_branch } => IrStmt::If {
+        Expr { span, expr } => IrStmt::Expr {
+            span: *span,
+            expr: lower_hir_expr(expr),
+        },
+        Return { span, expr } => IrStmt::Return {
+            span: *span,
+            expr: expr.as_ref().map(lower_hir_expr),
+        },
+        If {
+            span,
+            cond,
+            then_branch,
+            else_branch,
+        } => IrStmt::If {
             span: *span,
             cond: lower_hir_expr(cond),
             then_branch: lower_hir_block(then_branch),
@@ -294,18 +447,30 @@ fn lower_hir_stmt(s: &HirStmt) -> IrStmt {
             cond: lower_hir_expr(cond),
             body: lower_hir_block(body),
         },
-        For { span, pat, iter, body } => IrStmt::For {
+        For {
+            span,
+            pat,
+            iter,
+            body,
+        } => IrStmt::For {
             span: *span,
             pat: lower_pat(pat),
             iter: lower_hir_expr(iter),
             body: lower_hir_block(body),
         },
-        Match { span, scrutinee, arms } => IrStmt::Match {
+        Match {
+            span,
+            scrutinee,
+            arms,
+        } => IrStmt::Match {
             span: *span,
             scrutinee: lower_hir_expr(scrutinee),
             arms: arms.iter().map(lower_match_arm).collect(),
         },
-        Block { span, block } => IrStmt::Block { span: *span, block: lower_hir_block(block) },
+        Block { span, block } => IrStmt::Block {
+            span: *span,
+            block: lower_hir_block(block),
+        },
     }
 }
 
@@ -323,25 +488,45 @@ fn lower_pat(p: &HirPat) -> IrPat {
     let span = p.span();
     match p {
         Wild { span } => IrPat::Wild { span: *span },
-        Ident { span, name, is_mut } => IrPat::Ident { span: *span, name: name.clone(), is_mut: *is_mut },
-        Literal { span, lit } => IrPat::Literal { span: *span, lit: lower_literal(lit) },
-        Tuple { span, pats } => IrPat::Tuple { span: *span, pats: pats.iter().map(lower_pat).collect() },
+        Ident { span, name, is_mut } => IrPat::Ident {
+            span: *span,
+            name: name.clone(),
+            is_mut: *is_mut,
+        },
+        Literal { span, lit } => IrPat::Literal {
+            span: *span,
+            lit: lower_literal(lit),
+        },
+        Tuple { span, pats } => IrPat::Tuple {
+            span: *span,
+            pats: pats.iter().map(lower_pat).collect(),
+        },
         Struct { span, path, fields } => IrPat::Struct {
             span: *span,
             path: lower_type_path(path),
-            fields: fields.iter().map(|f| IrPatField {
-                span: f.span,
-                name: f.name.clone(),
-                pat: f.pat.as_ref().map(lower_pat),
-            }).collect(),
+            fields: fields
+                .iter()
+                .map(|f| IrPatField {
+                    span: f.span,
+                    name: f.name.clone(),
+                    pat: f.pat.as_ref().map(lower_pat),
+                })
+                .collect(),
         },
         Enum { span, path, fields } => IrPat::Enum {
             span: *span,
             path: lower_type_path(path),
             fields: fields.iter().map(lower_pat).collect(),
         },
-        Or { span, pats } => IrPat::Or { span: *span, pats: pats.iter().map(lower_pat).collect() },
-        Ref { span, is_mut, pat } => IrPat::Ref { span: *span, is_mut: *is_mut, pat: Box::new(lower_pat(pat)) },
+        Or { span, pats } => IrPat::Or {
+            span: *span,
+            pats: pats.iter().map(lower_pat).collect(),
+        },
+        Ref { span, is_mut, pat } => IrPat::Ref {
+            span: *span,
+            is_mut: *is_mut,
+            pat: Box::new(lower_pat(pat)),
+        },
     }
 }
 

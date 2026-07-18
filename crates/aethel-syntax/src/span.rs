@@ -204,7 +204,9 @@ impl SourceFile {
     pub fn line_text(&self, span: Span) -> &str {
         if let Some((line, _)) = self.location(span.start) {
             let start = self.line_start(line - 1).unwrap_or(ByteOffset(0));
-            let end = self.line_start(line).unwrap_or(ByteOffset(self.content.len() as u32));
+            let end = self
+                .line_start(line)
+                .unwrap_or(ByteOffset(self.content.len() as u32));
             &self.content[start.as_usize()..end.as_usize()]
         } else {
             ""

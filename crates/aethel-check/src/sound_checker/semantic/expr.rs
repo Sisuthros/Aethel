@@ -347,11 +347,7 @@ impl SemanticChecker {
         }
     }
 
-    pub(super) fn check_builtin_reason(
-        &mut self,
-        span: Span,
-        args: &[hir::HirExpr],
-    ) -> ir::IrType {
+    pub(super) fn check_builtin_reason(&mut self, span: Span, args: &[hir::HirExpr]) -> ir::IrType {
         // reason(prompt: string) -> Claim<string>
         if args.len() != 1 {
             self.error(
@@ -374,11 +370,7 @@ impl SemanticChecker {
         }
     }
 
-    pub(super) fn check_builtin_ask(
-        &mut self,
-        span: Span,
-        args: &[hir::HirExpr],
-    ) -> ir::IrType {
+    pub(super) fn check_builtin_ask(&mut self, span: Span, args: &[hir::HirExpr]) -> ir::IrType {
         // ask(input, OutputType) or ask(model, input, OutputType) -> Claim<OutputType>
         if args.len() < 2 || args.len() > 3 {
             self.error(
@@ -415,20 +407,25 @@ impl SemanticChecker {
         // Resolve by exact match or snake_case alias:
         // 1. Try exact receiver name against declared effect names
         // 2. Try snake_case alias of receiver against declared effects
-        let resolved_effect_name: Option<String> = self.current_effects.iter().find(|effect_name| {
-            effect_name_matches(&receiver_name, effect_name)
-        }).cloned();
+        let resolved_effect_name: Option<String> = self
+            .current_effects
+            .iter()
+            .find(|effect_name| effect_name_matches(&receiver_name, effect_name))
+            .cloned();
         // Collision detection: validate_effect_aliases() in the semantic checker
         // rejects programs with duplicate exact names or alias collisions.
         // By the time we reach effect resolution, each declared effect maps to
         // exactly one unique resolution path.
         let resolved_operation = resolved_effect_name.as_ref().and_then(|effect_name| {
-            self.effects.get(effect_name)
+            self.effects
+                .get(effect_name)
                 .and_then(|operations| operations.get(method))
                 .cloned()
         });
         let actual: Vec<_> = args.iter().map(|arg| self.check_expr(arg)).collect();
-        if let (Some(effect_name), Some(operation)) = (resolved_effect_name.as_ref(), resolved_operation) {
+        if let (Some(effect_name), Some(operation)) =
+            (resolved_effect_name.as_ref(), resolved_operation)
+        {
             self.check_args(
                 &actual,
                 &operation.params,
@@ -448,9 +445,9 @@ impl SemanticChecker {
             // Effect is not in uses: clause or not declared
             // Try to offer a helpful message
             let known_effects: Vec<&String> = self.effects.keys().collect();
-            let matched_effect = known_effects.iter().find(|ename| {
-                effect_name_matches(&receiver_name, ename)
-            });
+            let matched_effect = known_effects
+                .iter()
+                .find(|ename| effect_name_matches(&receiver_name, ename));
             if let Some(effect) = matched_effect {
                 // Effect exists but is not in current function's uses clause
                 self.error(
