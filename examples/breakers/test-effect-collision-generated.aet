@@ -1,0 +1,11 @@
+// TEST: two declared effects with colliding generated snake_case aliases
+// TwoWords → alias "two_words", two_words → alias "two_words" (collision)
+// Expected: AE-NAME-003 (effect name conflict)
+
+effect TwoWords {
+    fn run() -> int
+}
+
+effect two_words {
+    fn execute() -> string
+}

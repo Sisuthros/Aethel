@@ -1,0 +1,10 @@
+// TEST: declaring AuditService and audit_service is rejected (alias collision)
+// Expected: AE-NAME-003 (effect name conflict)
+
+effect AuditService {
+    fn run() -> int
+}
+
+effect audit_service {
+    fn execute() -> string
+}

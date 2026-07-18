@@ -8,8 +8,8 @@ use aethel_syntax::diagnostic::{codes, DiagnosticBuilder, DiagnosticCode, Diagno
 use aethel_syntax::span::Span;
 
 use super::util::{
-    canonical, effect_name_matches, expr_path_name, expr_span, hir_type_name, ir_path_name, lower_type,
-    lower_type_path, type_path_name,
+    effect_name_matches, expr_path_name, expr_span, hir_type_name, ir_path_name, lower_type,
+    lower_type_path, to_snake_case, type_path_name,
 };
 
 mod expr;
@@ -131,6 +131,7 @@ impl SemanticChecker {
     }
 
     pub(super) fn check(mut self, module: &hir::HirModule) -> Diagnostics {
+        self.validate_effect_aliases(module);
         self.validate_declarations(module);
         for item in &module.items {
             if let hir::HirItem::Fn(def) = item {
@@ -198,6 +199,66 @@ impl SemanticChecker {
                     }
                 }
                 hir::HirItem::Use(_) => {}
+            }
+        }
+    }
+
+    /// Validate that no two effects collide on their exact name or snake_case alias.
+    /// Rejects the program fail-closed when any name or alias maps to more than one effect.
+    pub(super) fn validate_effect_aliases(&mut self, module: &hir::HirModule) {
+        // Build a map from effect name → span for error reporting
+        #[derive(Clone)]
+        struct EffectEntry {
+            declared_name: String,
+            span: Span,
+        }
+
+        let mut seen_names: std::collections::HashMap<String, Vec<EffectEntry>> =
+            std::collections::HashMap::new();
+
+        for item in &module.items {
+            if let hir::HirItem::Effect(def) = item {
+                let alias = to_snake_case(&def.name);
+                let entry = EffectEntry {
+                    declared_name: def.name.clone(),
+                    span: def.span,
+                };
+                // Track under exact name
+                seen_names
+                    .entry(def.name.clone())
+                    .or_default()
+                    .push(entry.clone());
+                // Track under alias (only if different from exact name)
+                if alias != def.name {
+                    seen_names
+                        .entry(alias)
+                        .or_default()
+                        .push(entry);
+                }
+            }
+        }
+
+        // Report collisions: any key with >1 entry means collision
+        for (reserved_name, entries) in &seen_names {
+            if entries.len() > 1 {
+                let names: Vec<&str> = entries.iter().map(|e| e.declared_name.as_str()).collect();
+                self.error(
+                    codes::UNDEFINED_EFFECT(),
+                    format!(
+                        "effect name conflict: `{reserved_name}` is reserved by {}",
+                        names.join(", ")
+                    ),
+                    entries[0].span,
+                );
+            }
+        }
+
+        // Recurse into submodules
+        for item in &module.items {
+            if let hir::HirItem::Mod(def) = item {
+                if let Some(body) = &def.body {
+                    self.validate_effect_aliases(body);
+                }
             }
         }
     }
