@@ -1,7 +1,5 @@
 //! Semantic validation over resolved HIR.
 
-#![allow(clippy::all, clippy::pedantic, clippy::nursery)]
-
 use std::collections::{HashMap, HashSet};
 
 use aethel_hir::lower as hir;
@@ -10,7 +8,7 @@ use aethel_syntax::diagnostic::{codes, DiagnosticBuilder, DiagnosticCode, Diagno
 use aethel_syntax::span::Span;
 
 use super::util::{
-    alias_matches, canonical, expr_path_name, expr_span, hir_type_name, ir_path_name, lower_type,
+    canonical, effect_name_matches, expr_path_name, expr_span, hir_type_name, ir_path_name, lower_type,
     lower_type_path, type_path_name,
 };
 

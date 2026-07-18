@@ -151,6 +151,7 @@ pub fn resolve_module(module: &mut HirModule) -> Vec<String> {
     errors
 }
 
+#[allow(clippy::ptr_arg)]
 fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String>) {
     match item {
         HirItem::Fn(f) => {

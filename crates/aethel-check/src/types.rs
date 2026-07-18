@@ -178,7 +178,7 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
         Let { pat, ty, is_mut, init, .. } => IrExpr::Let {
             span,
             pat: lower_pat(pat),
-            ty: ty.as_ref().map(|t| lower_hir_type(t)).unwrap_or(IrType::Unit { span }),
+            ty: ty.as_ref().map(lower_hir_type).unwrap_or(IrType::Unit { span }),
             is_mut: *is_mut,
             init: Box::new(lower_hir_expr(init)),
         },
@@ -277,12 +277,12 @@ fn lower_hir_stmt(s: &HirStmt) -> IrStmt {
         Let { span, name, ty, is_mut, init } => IrStmt::Let {
             span: *span,
             name: name.clone(),
-            ty: ty.as_ref().map(|t| lower_hir_type(t)).unwrap_or(IrType::Unit { span: *span }),
+            ty: ty.as_ref().map(lower_hir_type).unwrap_or(IrType::Unit { span: *span }),
             is_mut: *is_mut,
-            init: init.as_ref().map(|e| lower_hir_expr(e)),
+            init: init.as_ref().map(lower_hir_expr),
         },
         Expr { span, expr } => IrStmt::Expr { span: *span, expr: lower_hir_expr(expr) },
-        Return { span, expr } => IrStmt::Return { span: *span, expr: expr.as_ref().map(|e| lower_hir_expr(e)) },
+        Return { span, expr } => IrStmt::Return { span: *span, expr: expr.as_ref().map(lower_hir_expr) },
         If { span, cond, then_branch, else_branch } => IrStmt::If {
             span: *span,
             cond: lower_hir_expr(cond),
@@ -313,7 +313,7 @@ fn lower_match_arm(a: &HirMatchArm) -> IrMatchArm {
     IrMatchArm {
         span: a.span,
         pat: lower_pat(&a.pat),
-        guard: a.guard.as_ref().map(|e| lower_hir_expr(e)),
+        guard: a.guard.as_ref().map(lower_hir_expr),
         body: lower_hir_expr(&a.body),
     }
 }

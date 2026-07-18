@@ -1,7 +1,5 @@
 //! Structural HIR to IR lowering after semantic validation.
 
-#![allow(clippy::all, clippy::pedantic, clippy::nursery)]
-
 use aethel_hir::lower as hir;
 use aethel_ir::lower as ir;
 use aethel_syntax::span::FileId;
@@ -143,7 +141,36 @@ fn lower_item(item: &hir::HirItem) -> Option<ir::IrItem> {
                 .collect(),
             is_pub: def.is_pub,
         })),
-        hir::HirItem::Effect(_) => None,
+        hir::HirItem::Effect(def) => {
+            // Effect operations: need to collect from the semantic checker's
+            // collected effects. The HIR effect def contains all operations.
+            let operations: Vec<ir::IrEffectOperation> = def
+                .operations
+                .iter()
+                .map(|op| ir::IrEffectOperation {
+                    span: op.span,
+                    name: op.name.clone(),
+                    params: op
+                        .params
+                        .iter()
+                        .map(|param| ir::IrParam {
+                            span: param.span,
+                            name: param.name.clone(),
+                            ty: lower_type(&param.ty),
+                            is_mut: param.is_mut,
+                        })
+                        .collect(),
+                    ret_type: op.ret_type.as_ref().map(lower_type),
+                })
+                .collect();
+            Some(ir::IrItem::Effect(ir::IrEffectDef {
+                span: def.span,
+                name: def.name.clone(),
+                generics: Vec::new(),
+                operations,
+                is_pub: def.is_pub,
+            }))
+        }
     }
 }
 

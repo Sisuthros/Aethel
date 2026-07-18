@@ -337,7 +337,8 @@ mod tests {
     }
 
     #[test]
-    fn test_lex_literals() {
+    #[allow(clippy::approx_constant)]
+fn test_lex_literals() {
         let source = "\"hello\" 42 3.14 true false";
         let tokens = lex(source, FileId::new(0));
         assert!(tokens
@@ -346,7 +347,7 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Int(42))));
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - 3.14).abs() < 0.01)));
+            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - 3.14_f64).abs() < 0.01)));
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::Bool(true))));

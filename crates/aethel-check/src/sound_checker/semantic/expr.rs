@@ -412,12 +412,14 @@ impl SemanticChecker {
             hir::HirExpr::Path { path, .. } => expr_path_name(path),
             _ => String::new(),
         };
-        // Resolve by exact canonical match: find which declared effect
-        // matches the receiver name, then look up the operation in that effect
-        let canonical_receiver = canonical(&receiver_name);
+        // Resolve by exact match or snake_case alias:
+        // 1. Try exact receiver name against declared effect names
+        // 2. Try snake_case alias of receiver against declared effects
         let resolved_effect_name: Option<String> = self.current_effects.iter().find(|effect_name| {
-            canonical(effect_name) == canonical_receiver
+            effect_name_matches(&receiver_name, effect_name)
         }).cloned();
+        // Alias collision detection at declaration time
+        // (duplicate snake_case aliases are rejected during collection)
         let resolved_operation = resolved_effect_name.as_ref().and_then(|effect_name| {
             self.effects.get(effect_name)
                 .and_then(|operations| operations.get(method))
@@ -432,11 +434,11 @@ impl SemanticChecker {
                 &format!("effect `{effect_name}.{method}`"),
             );
             operation.ret
-        } else if resolved_effect_name.is_some() {
+        } else if let Some(effect_name) = resolved_effect_name.as_ref() {
             // Effect is declared but operation not found
             self.error(
                 codes::UNDEFINED_EFFECT(),
-                format!("effect `{}` has no operation `{method}`", resolved_effect_name.as_ref().unwrap()),
+                format!("effect `{effect_name}` has no operation `{method}`"),
                 span,
             );
             ir::IrType::Unit { span }
@@ -445,7 +447,7 @@ impl SemanticChecker {
             // Try to offer a helpful message
             let known_effects: Vec<&String> = self.effects.keys().collect();
             let matched_effect = known_effects.iter().find(|ename| {
-                canonical(ename) == canonical_receiver
+                effect_name_matches(&receiver_name, ename)
             });
             if let Some(effect) = matched_effect {
                 // Effect exists but is not in current function's uses clause
