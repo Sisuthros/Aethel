@@ -33,6 +33,7 @@ impl EffectRegistry {
         Self::default()
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn register_builtin(
         &mut self,
         name: &str,

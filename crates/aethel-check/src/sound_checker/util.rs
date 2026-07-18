@@ -1,7 +1,5 @@
 //! Shared checker and lowering helpers.
 
-#![allow(clippy::all, clippy::pedantic, clippy::nursery)]
-
 use aethel_hir::lower as hir;
 use aethel_ir::lower as ir;
 use aethel_syntax::span::Span;
@@ -111,8 +109,31 @@ pub(super) fn canonical(name: &str) -> String {
         .collect()
 }
 
-pub(super) fn alias_matches(receiver: &str, effect: &str) -> bool {
-    canonical(receiver) == canonical(effect)
+/// Convert a PascalCase or camelCase name to snake_case.
+/// Used to generate the canonical alias for effect resolution.
+/// e.g. "AuditService" → "audit_service", "PaymentGateway" → "payment_gateway"
+pub(super) fn to_snake_case(name: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in name.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(c.to_ascii_lowercase());
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Check if a receiver name matches an effect declaration.
+/// Matches either the exact declared name or the exact snake_case alias.
+/// e.g. "audit_service" matches "AuditService" (as its snake_case alias)
+///      "AuditService" matches "AuditService" (exact)
+///      "auditservice" does NOT match either
+pub(super) fn effect_name_matches(receiver: &str, declared: &str) -> bool {
+    receiver == declared || receiver == to_snake_case(declared)
 }
 
 pub(super) fn expr_span(expr: &hir::HirExpr) -> Span {

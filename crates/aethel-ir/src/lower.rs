@@ -20,6 +20,7 @@ pub enum IrItem {
     Use(IrUseDecl),
     Mod(IrModDecl),
     Policy(IrPolicyDef),
+    Effect(IrEffectDef),
 }
 
 /// IR function with fully resolved types.
@@ -438,4 +439,23 @@ pub enum IrEvidenceKind {
     AuditLog,
     HumanReview,
     Custom(String),
+}
+
+/// IR effect definition.
+#[derive(Debug, Clone)]
+pub struct IrEffectDef {
+    pub span: Span,
+    pub name: String,
+    pub generics: Vec<IrGenericParam>,
+    pub operations: Vec<IrEffectOperation>,
+    pub is_pub: bool,
+}
+
+/// IR effect operation (method).
+#[derive(Debug, Clone)]
+pub struct IrEffectOperation {
+    pub span: Span,
+    pub name: String,
+    pub params: Vec<IrParam>,
+    pub ret_type: Option<IrType>,
 }

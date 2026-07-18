@@ -1,7 +1,5 @@
 //! SQLite event store implementation.
 
-use aethel_ir::lower::IrModule;
-use aethel_syntax::span::Span;
 use anyhow::Result;
 
 /// Event store for durable execution.
