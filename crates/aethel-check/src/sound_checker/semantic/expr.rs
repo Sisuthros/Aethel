@@ -418,8 +418,10 @@ impl SemanticChecker {
         let resolved_effect_name: Option<String> = self.current_effects.iter().find(|effect_name| {
             effect_name_matches(&receiver_name, effect_name)
         }).cloned();
-        // Alias collision detection at declaration time
-        // (duplicate snake_case aliases are rejected during collection)
+        // Collision detection: validate_effect_aliases() in the semantic checker
+        // rejects programs with duplicate exact names or alias collisions.
+        // By the time we reach effect resolution, each declared effect maps to
+        // exactly one unique resolution path.
         let resolved_operation = resolved_effect_name.as_ref().and_then(|effect_name| {
             self.effects.get(effect_name)
                 .and_then(|operations| operations.get(method))

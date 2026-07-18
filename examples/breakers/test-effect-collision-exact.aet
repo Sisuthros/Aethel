@@ -1,0 +1,10 @@
+// TEST: two effects with the same exact name are rejected
+// Expected: AE-NAME-003 (effect name conflict)
+
+effect Service {
+    fn do_something() -> int
+}
+
+effect Service {
+    fn do_other() -> string
+}

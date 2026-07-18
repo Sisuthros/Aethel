@@ -102,13 +102,6 @@ pub(super) fn hir_type_name(ty: &hir::HirType) -> Option<String> {
     }
 }
 
-pub(super) fn canonical(name: &str) -> String {
-    name.chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
-}
-
 /// Convert a PascalCase or camelCase name to snake_case.
 /// Used to generate the canonical alias for effect resolution.
 /// e.g. "AuditService" → "audit_service", "PaymentGateway" → "payment_gateway"
