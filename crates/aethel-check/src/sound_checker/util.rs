@@ -112,9 +112,7 @@ pub(super) fn canonical(name: &str) -> String {
 }
 
 pub(super) fn alias_matches(receiver: &str, effect: &str) -> bool {
-    let effect = canonical(effect);
-    let receiver = receiver.strip_suffix('s').unwrap_or(receiver);
-    effect == receiver || effect.starts_with(receiver) || receiver.starts_with(&effect)
+    canonical(receiver) == canonical(effect)
 }
 
 pub(super) fn expr_span(expr: &hir::HirExpr) -> Span {
