@@ -230,10 +230,7 @@ impl SemanticChecker {
                     .push(entry.clone());
                 // Track under alias (only if different from exact name)
                 if alias != def.name {
-                    seen_names
-                        .entry(alias)
-                        .or_default()
-                        .push(entry);
+                    seen_names.entry(alias).or_default().push(entry);
                 }
             }
         }

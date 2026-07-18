@@ -290,15 +290,15 @@ impl DiagnosticBuilder {
     }
 
     pub fn note_severity(code: DiagnosticCode, message: impl Into<String>) -> Self {
-            Self {
-                code,
-                severity: DiagnosticSeverity::Note,
-                message: message.into(),
-                labels: Vec::new(),
-                notes: Vec::new(),
-                help: None,
-            }
+        Self {
+            code,
+            severity: DiagnosticSeverity::Note,
+            message: message.into(),
+            labels: Vec::new(),
+            notes: Vec::new(),
+            help: None,
         }
+    }
 
     pub fn label(mut self, style: LabelStyle, span: Span, message: impl Into<String>) -> Self {
         self.labels.push(LabelInfo {
@@ -349,12 +349,12 @@ mod tests {
     #[test]
     fn test_diagnostic_builder() {
         let span = Span::new(FileId::new(0), ByteOffset(0), ByteOffset(10));
-                let diag = DiagnosticBuilder::error(codes::TYPE_MISMATCH(), "type mismatch")
-                    .primary_label(span, "expected `int`, found `string`")
-                    .note("help: try converting the string to an int")
-                    .build();
+        let diag = DiagnosticBuilder::error(codes::TYPE_MISMATCH(), "type mismatch")
+            .primary_label(span, "expected `int`, found `string`")
+            .note("help: try converting the string to an int")
+            .build();
 
-                assert_eq!(diag.code, codes::TYPE_MISMATCH());
+        assert_eq!(diag.code, codes::TYPE_MISMATCH());
         assert_eq!(diag.severity, DiagnosticSeverity::Error);
         assert_eq!(diag.labels.len(), 1);
         assert_eq!(diag.notes.len(), 1);

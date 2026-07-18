@@ -1,7 +1,9 @@
 use aethel_syntax::{lex, FileId};
 
 fn main() {
-    let source = std::fs::read_to_string(r"C:\Users\Ismael\aethel\examples\refund\invalid_unverified.aet").unwrap();
+    let source =
+        std::fs::read_to_string(r"C:\Users\Ismael\aethel\examples\refund\invalid_unverified.aet")
+            .unwrap();
     println!("Source length: {}", source.len());
     let tokens = lex(&source, FileId::new(0));
     println!("Tokens ({}):", tokens.len());

@@ -253,9 +253,19 @@ impl Spanned for UseDecl {
 /// Use path (can be a tree).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UsePath {
-    Simple { span: Span, path: TypePath },
-    Glob { span: Span, prefix: TypePath },
-    Group { span: Span, prefix: TypePath, items: Vec<UsePath> },
+    Simple {
+        span: Span,
+        path: TypePath,
+    },
+    Glob {
+        span: Span,
+        prefix: TypePath,
+    },
+    Group {
+        span: Span,
+        prefix: TypePath,
+        items: Vec<UsePath>,
+    },
 }
 
 impl Spanned for UsePath {
@@ -386,15 +396,27 @@ pub enum Type {
     /// Identifier/type path
     Path { span: Span, path: TypePath },
     /// Reference `&T` or `&mut T`
-    Ref { span: Span, is_mut: bool, ty: Box<Type> },
+    Ref {
+        span: Span,
+        is_mut: bool,
+        ty: Box<Type>,
+    },
     /// Linear/owned `T`
     Owned { span: Span, ty: Box<Type> },
     /// Claim `Claim<T>`
     Claim { span: Span, ty: Box<Type> },
     /// Verified `Verified<T, Policy>`
-    Verified { span: Span, ty: Box<Type>, policy: Box<Type> },
+    Verified {
+        span: Span,
+        ty: Box<Type>,
+        policy: Box<Type>,
+    },
     /// Array `[T; n]`
-    Array { span: Span, ty: Box<Type>, size: Option<Box<Expr>> },
+    Array {
+        span: Span,
+        ty: Box<Type>,
+        size: Option<Box<Expr>>,
+    },
     /// Tuple `(T1, T2, ...)`
     Tuple { span: Span, types: Vec<Type> },
     /// Function type `fn(T1, T2) -> R effects E`
@@ -444,7 +466,11 @@ impl TypePath {
     pub fn single(span: Span, name: Ident) -> Self {
         Self {
             span,
-            segments: vec![PathSegment { span: name.span, name, args: None }],
+            segments: vec![PathSegment {
+                span: name.span,
+                name,
+                args: None,
+            }],
         }
     }
 
@@ -628,14 +654,41 @@ impl Default for Block {
 /// Patterns for matching.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Pat {
-    Wild { span: Span },
-    Ident { span: Span, name: Ident, is_mut: bool },
-    Literal { span: Span, lit: Literal },
-    Tuple { span: Span, pats: Vec<Pat> },
-    Struct { span: Span, path: TypePath, fields: Vec<PatField> },
-    Enum { span: Span, path: TypePath, fields: Vec<Pat> },
-    Or { span: Span, pats: Vec<Pat> },
-    Ref { span: Span, is_mut: bool, pat: Box<Pat> },
+    Wild {
+        span: Span,
+    },
+    Ident {
+        span: Span,
+        name: Ident,
+        is_mut: bool,
+    },
+    Literal {
+        span: Span,
+        lit: Literal,
+    },
+    Tuple {
+        span: Span,
+        pats: Vec<Pat>,
+    },
+    Struct {
+        span: Span,
+        path: TypePath,
+        fields: Vec<PatField>,
+    },
+    Enum {
+        span: Span,
+        path: TypePath,
+        fields: Vec<Pat>,
+    },
+    Or {
+        span: Span,
+        pats: Vec<Pat>,
+    },
+    Ref {
+        span: Span,
+        is_mut: bool,
+        pat: Box<Pat>,
+    },
 }
 
 impl Spanned for Pat {
@@ -685,27 +738,60 @@ impl Spanned for MatchArm {
 /// Expressions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
-    Literal { span: Span, lit: Literal },
-    Path { span: Span, path: ExprPath },
-    Tuple { span: Span, exprs: Vec<Expr> },
-    Array { span: Span, exprs: Vec<Expr> },
+    Literal {
+        span: Span,
+        lit: Literal,
+    },
+    Path {
+        span: Span,
+        path: ExprPath,
+    },
+    Tuple {
+        span: Span,
+        exprs: Vec<Expr>,
+    },
+    Array {
+        span: Span,
+        exprs: Vec<Expr>,
+    },
     Struct {
         span: Span,
         path: TypePath,
         fields: Vec<StructExprField>,
         base: Option<Box<Expr>>,
     },
-    Call { span: Span, callee: Box<Expr>, args: Vec<Expr> },
+    Call {
+        span: Span,
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
     MethodCall {
         span: Span,
         receiver: Box<Expr>,
         method: Ident,
         args: Vec<Expr>,
     },
-    Field { span: Span, base: Box<Expr>, field: Ident },
-    Index { span: Span, base: Box<Expr>, index: Box<Expr> },
-    Unary { span: Span, op: UnaryOp, expr: Box<Expr> },
-    Binary { span: Span, op: BinaryOp, left: Box<Expr>, right: Box<Expr> },
+    Field {
+        span: Span,
+        base: Box<Expr>,
+        field: Ident,
+    },
+    Index {
+        span: Span,
+        base: Box<Expr>,
+        index: Box<Expr>,
+    },
+    Unary {
+        span: Span,
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Binary {
+        span: Span,
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
     If {
         span: Span,
         cond: Box<Expr>,
@@ -717,7 +803,10 @@ pub enum Expr {
         scrutinee: Box<Expr>,
         arms: Vec<MatchArm>,
     },
-    Block { span: Span, block: Block },
+    Block {
+        span: Span,
+        block: Block,
+    },
     Let {
         span: Span,
         pat: Pat,
@@ -725,9 +814,17 @@ pub enum Expr {
         is_mut: bool,
         init: Box<Expr>,
     },
-    Return { span: Span, expr: Option<Box<Expr>> },
-    Break { span: Span, expr: Option<Box<Expr>> },
-    Continue { span: Span },
+    Return {
+        span: Span,
+        expr: Option<Box<Expr>>,
+    },
+    Break {
+        span: Span,
+        expr: Option<Box<Expr>>,
+    },
+    Continue {
+        span: Span,
+    },
     Ask {
         span: Span,
         model: ExprPath,
@@ -736,20 +833,20 @@ pub enum Expr {
         output_ty: Type,
     },
     Verify {
-            span: Span,
-            claim: Box<Expr>,
-            policy: TypePath,
-        },
-        Reason {
-            span: Span,
-            prompt: String,
-        },
-        CommitOnce {
-            span: Span,
-            effect: EffectRef,
-            args: Vec<Expr>,
-        },
-        New {
+        span: Span,
+        claim: Box<Expr>,
+        policy: TypePath,
+    },
+    Reason {
+        span: Span,
+        prompt: String,
+    },
+    CommitOnce {
+        span: Span,
+        effect: EffectRef,
+        args: Vec<Expr>,
+    },
+    New {
         span: Span,
         ty: Type,
         args: Vec<Expr>,
