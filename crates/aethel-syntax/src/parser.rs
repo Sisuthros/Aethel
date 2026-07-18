@@ -898,8 +898,8 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // Block statement
-        if self.check(TokenKind::LBrace) {
+        // Block statement — consume the opening brace BEFORE parse_block
+        if self.eat(TokenKind::LBrace) {
             let block = self.parse_block()?;
             let end = self.previous_span();
             return Some(Stmt::Block {
@@ -2090,6 +2090,14 @@ impl<'a> Parser<'a> {
     }
 
     fn previous_token(&self) -> &Token {
+        if self.tokens.is_empty() {
+            return EMPTY_TOKEN.get_or_init(|| {
+                Token::new(
+                    TokenKind::Ident(String::new()),
+                    Span::new(FileId::new(0), ByteOffset(0), ByteOffset(0)),
+                )
+            });
+        }
         &self.tokens[self.current.saturating_sub(1)]
     }
 
@@ -2150,6 +2158,8 @@ impl<'a> Parser<'a> {
                     | TokenKind::KwPolicy
                     | TokenKind::KwClaim
                     | TokenKind::KwEffect
+                    | TokenKind::RBrace
+                    | TokenKind::Semi
             ) {
                 break;
             }
