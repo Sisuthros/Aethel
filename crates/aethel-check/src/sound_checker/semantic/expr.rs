@@ -321,6 +321,13 @@ impl SemanticChecker {
                 return ir::IrType::Unit { span };
             }
         };
+        // Built-in functions: reason and ask
+        if name == "reason" {
+            return self.check_builtin_reason(span, args);
+        }
+        if name == "ask" {
+            return self.check_builtin_ask(span, args);
+        }
         let actual: Vec<_> = args.iter().map(|arg| self.check_expr(arg)).collect();
         if let Some(signature) = self.functions.get(&name).cloned() {
             self.check_args(
@@ -340,6 +347,60 @@ impl SemanticChecker {
         }
     }
 
+    pub(super) fn check_builtin_reason(
+        &mut self,
+        span: Span,
+        args: &[hir::HirExpr],
+    ) -> ir::IrType {
+        // reason(prompt: string) -> Claim<string>
+        if args.len() != 1 {
+            self.error(
+                codes::TYPE_MISMATCH(),
+                format!("reason expects 1 argument, received {}", args.len()),
+                span,
+            );
+            return ir::IrType::Unit { span };
+        }
+        let prompt_ty = self.check_expr(&args[0]);
+        self.require_assignable(
+            &prompt_ty,
+            &ir::IrType::String { span },
+            span,
+            "reason argument",
+        );
+        ir::IrType::Claim {
+            span,
+            ty: Box::new(ir::IrType::String { span }),
+        }
+    }
+
+    pub(super) fn check_builtin_ask(
+        &mut self,
+        span: Span,
+        args: &[hir::HirExpr],
+    ) -> ir::IrType {
+        // ask(input, OutputType) or ask(model, input, OutputType) -> Claim<OutputType>
+        if args.len() < 2 || args.len() > 3 {
+            self.error(
+                codes::TYPE_MISMATCH(),
+                format!("ask expects 2 or 3 arguments, received {}", args.len()),
+                span,
+            );
+            return ir::IrType::Unit { span };
+        }
+        // Check all provided arguments
+        for arg in args {
+            self.check_expr(arg);
+        }
+        // The last argument is always the output type - extract from HIR
+        // The semantic type comes from the output_ty annotation
+        // Default to Claim<string> since we can't extract the type path from parsed call
+        ir::IrType::Claim {
+            span,
+            ty: Box::new(ir::IrType::String { span }),
+        }
+    }
+
     pub(super) fn check_effect_call(
         &mut self,
         span: Span,
@@ -351,47 +412,55 @@ impl SemanticChecker {
             hir::HirExpr::Path { path, .. } => expr_path_name(path),
             _ => String::new(),
         };
-        let mut candidates = Vec::new();
-        for effect_name in &self.current_effects {
-            if let Some(operation) = self
-                .effects
-                .get(effect_name)
+        // Resolve by exact canonical match: find which declared effect
+        // matches the receiver name, then look up the operation in that effect
+        let canonical_receiver = canonical(&receiver_name);
+        let resolved_effect_name: Option<String> = self.current_effects.iter().find(|effect_name| {
+            canonical(effect_name) == canonical_receiver
+        }).cloned();
+        let resolved_operation = resolved_effect_name.as_ref().and_then(|effect_name| {
+            self.effects.get(effect_name)
                 .and_then(|operations| operations.get(method))
-            {
-                candidates.push((effect_name.clone(), operation.clone()));
-            }
-        }
-        let selected = if candidates.len() == 1 {
-            candidates.first().cloned()
-        } else {
-            let key = canonical(&receiver_name);
-            candidates
-                .iter()
-                .find(|(effect, _)| alias_matches(&key, effect))
                 .cloned()
-        };
+        });
         let actual: Vec<_> = args.iter().map(|arg| self.check_expr(arg)).collect();
-        if let Some((effect, operation)) = selected {
+        if let (Some(effect_name), Some(operation)) = (resolved_effect_name.as_ref(), resolved_operation) {
             self.check_args(
                 &actual,
                 &operation.params,
                 span,
-                &format!("effect `{effect}.{method}`"),
+                &format!("effect `{effect_name}.{method}`"),
             );
             operation.ret
+        } else if resolved_effect_name.is_some() {
+            // Effect is declared but operation not found
+            self.error(
+                codes::UNDEFINED_EFFECT(),
+                format!("effect `{}` has no operation `{method}`", resolved_effect_name.as_ref().unwrap()),
+                span,
+            );
+            ir::IrType::Unit { span }
         } else {
-            let (code, message) = if candidates.is_empty() {
-                (
-                    codes::EFFECT_NOT_DECLARED(),
-                    format!("operation `{method}` is not available from declared effects"),
-                )
-            } else {
-                (
-                    codes::AMBIGUOUS_NAME(),
-                    format!("ambiguous effect operation `{method}` for `{receiver_name}`"),
-                )
-            };
-            self.error(code, message, span);
+            // Effect is not in uses: clause or not declared
+            // Try to offer a helpful message
+            let known_effects: Vec<&String> = self.effects.keys().collect();
+            let matched_effect = known_effects.iter().find(|ename| {
+                canonical(ename) == canonical_receiver
+            });
+            if let Some(effect) = matched_effect {
+                // Effect exists but is not in current function's uses clause
+                self.error(
+                    codes::UNDEFINED_EFFECT(),
+                    format!("effect `{effect}` is declared but not listed in `uses:` clause"),
+                    span,
+                );
+            } else if !receiver_name.is_empty() {
+                self.error(
+                    codes::UNDEFINED_EFFECT(),
+                    format!("unknown effect `{receiver_name}`"),
+                    span,
+                );
+            }
             ir::IrType::Unit { span }
         }
     }
@@ -407,7 +476,7 @@ impl SemanticChecker {
             ir::IrType::Claim { ty, .. } => *ty,
             other => {
                 self.error(
-                    codes::EPISTEMIC_VERIFIED_REQUIRED(),
+                    codes::TYPE_MISMATCH(),
                     format!(
                         "verify requires Claim<T>, found `{}`",
                         self.format_type(&other)
