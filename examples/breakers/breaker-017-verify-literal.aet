@@ -1,0 +1,18 @@
+// BREAKER 017 — verify() on a non-Claim (literal)
+// verify expects Claim<T>, but gets an int literal
+// Expected: AE-EPISTEMIC-001 or AE-TYPE-001
+
+fn verify_literal() -> Verified<int, APolicy>
+uses Check:
+    {
+        let v = verify(42, APolicy);
+        return check.run(v);
+    }
+
+effect Check {
+    fn run(data: Verified<int, APolicy>) -> int
+}
+
+policy APolicy {
+    Amount: int { evidence SignedAttestation "test" }
+}

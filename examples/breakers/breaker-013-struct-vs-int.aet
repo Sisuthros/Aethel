@@ -1,0 +1,6 @@
+// BREAKER 013 — Struct vs int type mismatch
+// Expected: AE-TYPE-001
+
+fn wrong_type(x: int) -> string {
+    return x;
+}

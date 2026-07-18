@@ -1,0 +1,24 @@
+// BREAKER 011 — Effect not declared in uses: calling an effect method
+// that's not listed in the `uses:` clause
+// Expected: AE-NAME-003 (undefined effect) or AE-EPISTEMIC-001
+
+struct Item { id: string }
+
+fn undeclared_effect(c: Claim<Item>) -> int
+uses Logger:  // Only Logger declared, not Storage
+    {
+        let v = verify(c, ItemPolicy);
+        return storage.save(v);
+    }
+
+effect Logger {
+    fn log(value: Verified<Item, ItemPolicy>) -> int
+}
+
+effect Storage {
+    fn save(value: Verified<Item, ItemPolicy>) -> int
+}
+
+policy ItemPolicy {
+    Item: Item { evidence SignedAttestation "test" }
+}
