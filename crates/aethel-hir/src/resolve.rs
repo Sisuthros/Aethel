@@ -209,7 +209,7 @@ pub fn resolve_module(module: &mut HirModule) -> Vec<String> {
     errors
 }
 
-#[allow(clippy::ptr_arg)]
+#[allow(clippy::ptr_arg, clippy::only_used_in_recursion)]
 fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String>) {
     match item {
         HirItem::Fn(f) => {
@@ -228,20 +228,36 @@ fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String
             table.add_type(p.name.clone(), TypeSymbol::Policy(p.clone()));
         }
         HirItem::Effect(e) => {
-            // Effects are registered for boundary checks (simplified for v0.1)
+            // Effects are registered for boundary checks
             table.add_effect(
                 e.name.clone(),
                 EffectSymbol {
                     name: e.name.clone(),
-                    operations: vec![], // populated in full lowering
+                    operations: e
+                        .operations
+                        .iter()
+                        .map(|op| EffectOperation {
+                            name: op.name.clone(),
+                            params: op.params.clone(),
+                            ret_type: op.ret_type.clone(),
+                        })
+                        .collect(), // Use actual operations from lowered HIR
                 },
             );
         }
         HirItem::Use(u) => {
-            // Use declarations don't add to symbol table directly
+            // Use declarations don't add to symbol table directly.
+            // In future, use-path resolution will populate imports here.
         }
         HirItem::Mod(m) => {
-            // Modules create nested namespaces
+            // Register the module and recurse into its body
+            if let Some(body) = &m.body {
+                // Collect items inside the module under the parent table
+                // so they're available for qualified resolution
+                for item in &body.items {
+                    collect_item(table, item, errors);
+                }
+            }
         }
     }
 }
@@ -265,7 +281,13 @@ fn resolve_item(table: &mut SymbolTable, item: &mut HirItem, errors: &mut Vec<St
         }
         HirItem::Mod(m) => {
             if let Some(body) = &mut m.body {
-                resolve_module(body);
+                // Use the existing table with a new scope so parent symbols
+                // (types, values, effects declared at module level) remain visible.
+                table.enter_scope();
+                for item in &mut body.items {
+                    resolve_item(table, item, errors);
+                }
+                table.exit_scope();
             }
         }
         _ => {}
@@ -358,7 +380,10 @@ fn resolve_policy(table: &mut SymbolTable, p: &mut HirPolicyDef, errors: &mut Ve
     for claim in &mut p.claims {
         resolve_type(table, &mut claim.ty, errors);
         for ev in &claim.evidence {
-            // Evidence kinds don't need resolution
+            // TODO(#3): Resolve evidence kinds — currently not enforced
+            // Evidence validation will be added when the semantic checker
+            // implements evidence kind matching (tracked as known gap).
+            let _ = ev;
         }
     }
     table.exit_scope();
