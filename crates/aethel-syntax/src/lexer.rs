@@ -346,7 +346,7 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Int(42))));
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - 3.14).abs() < 0.01)));
+            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - std::f64::consts::PI).abs() < 0.01)));
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::Bool(true))));

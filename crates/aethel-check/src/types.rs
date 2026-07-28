@@ -238,7 +238,7 @@ pub fn lower_hir_expr(expr: &HirExpr) -> IrExpr {
             pat: lower_pat(pat),
             ty: ty
                 .as_ref()
-                .map(|t| lower_hir_type(t))
+                .map(lower_hir_type)
                 .unwrap_or(IrType::Unit { span }),
             is_mut: *is_mut,
             init: Box::new(lower_hir_expr(init)),
@@ -382,10 +382,10 @@ fn lower_hir_stmt(s: &HirStmt) -> IrStmt {
             name: name.clone(),
             ty: ty
                 .as_ref()
-                .map(|t| lower_hir_type(t))
+                .map(lower_hir_type)
                 .unwrap_or(IrType::Unit { span: *span }),
             is_mut: *is_mut,
-            init: init.as_ref().map(|e| lower_hir_expr(e)),
+            init: init.as_ref().map(lower_hir_expr),
         },
         Expr { span, expr } => IrStmt::Expr {
             span: *span,
@@ -393,7 +393,7 @@ fn lower_hir_stmt(s: &HirStmt) -> IrStmt {
         },
         Return { span, expr } => IrStmt::Return {
             span: *span,
-            expr: expr.as_ref().map(|e| lower_hir_expr(e)),
+            expr: expr.as_ref().map(lower_hir_expr),
         },
         If {
             span,
@@ -442,7 +442,7 @@ fn lower_match_arm(a: &HirMatchArm) -> IrMatchArm {
     IrMatchArm {
         span: a.span,
         pat: lower_pat(&a.pat),
-        guard: a.guard.as_ref().map(|e| lower_hir_expr(e)),
+        guard: a.guard.as_ref().map(lower_hir_expr),
         body: lower_hir_expr(&a.body),
     }
 }

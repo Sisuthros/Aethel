@@ -209,7 +209,7 @@ pub fn resolve_module(module: &mut HirModule) -> Vec<String> {
     errors
 }
 
-fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String>) {
+fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut [String]) {
     match item {
         HirItem::Fn(f) => {
             table.add_value(f.name.clone(), ValueSymbol::Fn(f.clone()));

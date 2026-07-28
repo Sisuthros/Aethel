@@ -177,7 +177,7 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
                     ops.push(serde_json::json!({
                         "name": op.name.name,
                         "params": params,
-                        "returns": op.ret_type.as_ref().map(|t| ast_type_to_string(t))
+                        "returns": op.ret_type.as_ref().map(ast_type_to_string),
                     }));
                 }
                 effects_json.push(serde_json::json!({
@@ -227,12 +227,12 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
                     }
                 }
                 functions_json.push(serde_json::json!({
-                    "name": f.name.name,
-                    "params": params,
-                    "returns": f.ret_type.as_ref().map(|t| ast_type_to_string(t)),
-                    "effects": effects,
-                    "has_body": f.body.is_some()
-                }));
+                                    "name": f.name.name,
+                                    "params": params,
+                                    "returns": f.ret_type.as_ref().map(ast_type_to_string),
+                                    "effects": effects,
+                                    "has_body": f.body.is_some()
+                                }));
             }
             _ => {}
         }

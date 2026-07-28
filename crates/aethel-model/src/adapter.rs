@@ -21,6 +21,7 @@ pub trait ModelAdapter: Send + Sync {
 }
 
 /// Registry of model adapters.
+#[derive(Default)]
 pub struct ModelRegistry {
     adapters: std::collections::HashMap<String, Box<dyn ModelAdapter>>,
 }
