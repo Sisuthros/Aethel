@@ -13,6 +13,8 @@ members = [
     "crates/aethel-effects",
     "crates/aethel-wasm",
     "crates/aethel-testkit",
+    "crates/aethel-policy-engine",
+    "crates/aethel-verifier",
 ]
 
 [workspace.package]
@@ -44,6 +46,16 @@ jiff = { version = "0.8", features = ["tzdb"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
+# Policy engine dependencies
+opa-wasm = "0.8"
+rego = "0.14"
+lru = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Internal workspace members as dependencies
+aethel-policy-engine = { path = "crates/aethel-policy-engine" }
+aethel-verifier = { path = "crates/aethel-verifier" }
+
 [workspace.lints]
 clippy.all = { level = "deny", priority = -1 }
 clippy.pedantic = { level = "warn", priority = -1 }
@@ -72,3 +84,6 @@ panic = "abort"
 [profile.test]
 opt-level = 2
 debug = true
+
+[tool.insta]
+input_file = "snapshots/{test_file}__{test_name}.snap"

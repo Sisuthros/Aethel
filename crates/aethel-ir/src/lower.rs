@@ -122,27 +122,60 @@ pub enum IrStmt {
 
 #[derive(Debug, Clone)]
 pub enum IrExpr {
-    Literal { span: Span, lit: IrLiteral },
-    Path { span: Span, path: IrExprPath },
-    Tuple { span: Span, exprs: Vec<IrExpr> },
-    Array { span: Span, exprs: Vec<IrExpr> },
+    Literal {
+        span: Span,
+        lit: IrLiteral,
+    },
+    Path {
+        span: Span,
+        path: IrExprPath,
+    },
+    Tuple {
+        span: Span,
+        exprs: Vec<IrExpr>,
+    },
+    Array {
+        span: Span,
+        exprs: Vec<IrExpr>,
+    },
     Struct {
         span: Span,
         path: IrTypePath,
         fields: Vec<IrStructExprField>,
         base: Option<Box<IrExpr>>,
     },
-    Call { span: Span, callee: Box<IrExpr>, args: Vec<IrExpr> },
+    Call {
+        span: Span,
+        callee: Box<IrExpr>,
+        args: Vec<IrExpr>,
+    },
     MethodCall {
         span: Span,
         receiver: Box<IrExpr>,
         method: String,
         args: Vec<IrExpr>,
     },
-    Field { span: Span, base: Box<IrExpr>, field: String },
-    Index { span: Span, base: Box<IrExpr>, index: Box<IrExpr> },
-    Unary { span: Span, op: IrUnaryOp, expr: Box<IrExpr> },
-    Binary { span: Span, op: IrBinaryOp, left: Box<IrExpr>, right: Box<IrExpr> },
+    Field {
+        span: Span,
+        base: Box<IrExpr>,
+        field: String,
+    },
+    Index {
+        span: Span,
+        base: Box<IrExpr>,
+        index: Box<IrExpr>,
+    },
+    Unary {
+        span: Span,
+        op: IrUnaryOp,
+        expr: Box<IrExpr>,
+    },
+    Binary {
+        span: Span,
+        op: IrBinaryOp,
+        left: Box<IrExpr>,
+        right: Box<IrExpr>,
+    },
     If {
         span: Span,
         cond: Box<IrExpr>,
@@ -154,7 +187,10 @@ pub enum IrExpr {
         scrutinee: Box<IrExpr>,
         arms: Vec<IrMatchArm>,
     },
-    Block { span: Span, block: IrBlock },
+    Block {
+        span: Span,
+        block: IrBlock,
+    },
     Let {
         span: Span,
         pat: IrPat,
@@ -162,9 +198,17 @@ pub enum IrExpr {
         is_mut: bool,
         init: Box<IrExpr>,
     },
-    Return { span: Span, expr: Option<Box<IrExpr>> },
-    Break { span: Span, expr: Option<Box<IrExpr>> },
-    Continue { span: Span },
+    Return {
+        span: Span,
+        expr: Option<Box<IrExpr>>,
+    },
+    Break {
+        span: Span,
+        expr: Option<Box<IrExpr>>,
+    },
+    Continue {
+        span: Span,
+    },
     Ask {
         span: Span,
         model: IrExprPath,
@@ -186,7 +230,11 @@ pub enum IrExpr {
         effect: IrEffectRef,
         args: Vec<IrExpr>,
     },
-    New { span: Span, ty: IrType, args: Vec<IrExpr> },
+    New {
+        span: Span,
+        ty: IrType,
+        args: Vec<IrExpr>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -199,14 +247,41 @@ pub struct IrMatchArm {
 
 #[derive(Debug, Clone)]
 pub enum IrPat {
-    Wild { span: Span },
-    Ident { span: Span, name: String, is_mut: bool },
-    Literal { span: Span, lit: IrLiteral },
-    Tuple { span: Span, pats: Vec<IrPat> },
-    Struct { span: Span, path: IrTypePath, fields: Vec<IrPatField> },
-    Enum { span: Span, path: IrTypePath, fields: Vec<IrPat> },
-    Or { span: Span, pats: Vec<IrPat> },
-    Ref { span: Span, is_mut: bool, pat: Box<IrPat> },
+    Wild {
+        span: Span,
+    },
+    Ident {
+        span: Span,
+        name: String,
+        is_mut: bool,
+    },
+    Literal {
+        span: Span,
+        lit: IrLiteral,
+    },
+    Tuple {
+        span: Span,
+        pats: Vec<IrPat>,
+    },
+    Struct {
+        span: Span,
+        path: IrTypePath,
+        fields: Vec<IrPatField>,
+    },
+    Enum {
+        span: Span,
+        path: IrTypePath,
+        fields: Vec<IrPat>,
+    },
+    Or {
+        span: Span,
+        pats: Vec<IrPat>,
+    },
+    Ref {
+        span: Span,
+        is_mut: bool,
+        pat: Box<IrPat>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -316,19 +391,55 @@ impl IrTypePath {
 
 #[derive(Debug, Clone)]
 pub enum IrType {
-    Unit { span: Span },
-    Never { span: Span },
-    Bool { span: Span },
-    Int { span: Span },
-    Float { span: Span },
-    String { span: Span },
-    Path { span: Span, path: IrTypePath },
-    Ref { span: Span, is_mut: bool, ty: Box<IrType> },
-    Owned { span: Span, ty: Box<IrType> },
-    Claim { span: Span, ty: Box<IrType> },
-    Verified { span: Span, ty: Box<IrType>, policy: Box<IrType> },
-    Array { span: Span, ty: Box<IrType>, size: Option<Box<IrExpr>> },
-    Tuple { span: Span, types: Vec<IrType> },
+    Unit {
+        span: Span,
+    },
+    Never {
+        span: Span,
+    },
+    Bool {
+        span: Span,
+    },
+    Int {
+        span: Span,
+    },
+    Float {
+        span: Span,
+    },
+    String {
+        span: Span,
+    },
+    Path {
+        span: Span,
+        path: IrTypePath,
+    },
+    Ref {
+        span: Span,
+        is_mut: bool,
+        ty: Box<IrType>,
+    },
+    Owned {
+        span: Span,
+        ty: Box<IrType>,
+    },
+    Claim {
+        span: Span,
+        ty: Box<IrType>,
+    },
+    Verified {
+        span: Span,
+        ty: Box<IrType>,
+        policy: Box<IrType>,
+    },
+    Array {
+        span: Span,
+        ty: Box<IrType>,
+        size: Option<Box<IrExpr>>,
+    },
+    Tuple {
+        span: Span,
+        types: Vec<IrType>,
+    },
     Fn {
         span: Span,
         params: Vec<IrType>,
@@ -372,8 +483,15 @@ pub struct IrEnumVariant {
 
 #[derive(Debug, Clone)]
 pub enum IrEnumField {
-    Tuple { span: Span, ty: IrType },
-    Named { span: Span, name: String, ty: IrType },
+    Tuple {
+        span: Span,
+        ty: IrType,
+    },
+    Named {
+        span: Span,
+        name: String,
+        ty: IrType,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -394,9 +512,19 @@ pub struct IrUseDecl {
 
 #[derive(Debug, Clone)]
 pub enum IrUsePath {
-    Simple { span: Span, path: IrTypePath },
-    Glob { span: Span, prefix: IrTypePath },
-    Group { span: Span, prefix: IrTypePath, items: Vec<IrUsePath> },
+    Simple {
+        span: Span,
+        path: IrTypePath,
+    },
+    Glob {
+        span: Span,
+        prefix: IrTypePath,
+    },
+    Group {
+        span: Span,
+        prefix: IrTypePath,
+        items: Vec<IrUsePath>,
+    },
 }
 
 #[derive(Debug, Clone)]

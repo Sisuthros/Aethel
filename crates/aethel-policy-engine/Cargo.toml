@@ -1,0 +1,32 @@
+[package]
+name = "aethel-policy-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Aethel Policy Engine - OPA/Rego wrapper for policy-as-code runtime"
+license = "MIT OR Apache-2.0"
+authors = ["Aethel Contributors"]
+repository = "https://github.com/Sisuthros/Aethel"
+readme = "README.md"
+keywords = ["policy", "opa", "rego", "policy-engine", "quantum", "aethel"]
+categories = ["development-tools", "programming-languages", "web-programming"]
+
+[dependencies]
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+async-trait = "0.1"
+tracing = { workspace = true, features = ["log"] }
+lru = "0.12"
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+insta = { workspace = true, features = ["json"] }
+tempfile = "3.8"
+anyhow = { workspace = true }
+
+[lib]
+name = "aethel_policy_engine"
+path = "src/lib.rs"

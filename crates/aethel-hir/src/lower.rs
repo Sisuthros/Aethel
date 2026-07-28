@@ -123,27 +123,60 @@ pub enum HirStmt {
 
 #[derive(Debug, Clone)]
 pub enum HirExpr {
-    Literal { span: Span, lit: HirLiteral },
-    Path { span: Span, path: HirExprPath },
-    Tuple { span: Span, exprs: Vec<HirExpr> },
-    Array { span: Span, exprs: Vec<HirExpr> },
+    Literal {
+        span: Span,
+        lit: HirLiteral,
+    },
+    Path {
+        span: Span,
+        path: HirExprPath,
+    },
+    Tuple {
+        span: Span,
+        exprs: Vec<HirExpr>,
+    },
+    Array {
+        span: Span,
+        exprs: Vec<HirExpr>,
+    },
     Struct {
         span: Span,
         path: HirTypePath,
         fields: Vec<HirStructExprField>,
         base: Option<Box<HirExpr>>,
     },
-    Call { span: Span, callee: Box<HirExpr>, args: Vec<HirExpr> },
+    Call {
+        span: Span,
+        callee: Box<HirExpr>,
+        args: Vec<HirExpr>,
+    },
     MethodCall {
         span: Span,
         receiver: Box<HirExpr>,
         method: String,
         args: Vec<HirExpr>,
     },
-    Field { span: Span, base: Box<HirExpr>, field: String },
-    Index { span: Span, base: Box<HirExpr>, index: Box<HirExpr> },
-    Unary { span: Span, op: HirUnaryOp, expr: Box<HirExpr> },
-    Binary { span: Span, op: HirBinaryOp, left: Box<HirExpr>, right: Box<HirExpr> },
+    Field {
+        span: Span,
+        base: Box<HirExpr>,
+        field: String,
+    },
+    Index {
+        span: Span,
+        base: Box<HirExpr>,
+        index: Box<HirExpr>,
+    },
+    Unary {
+        span: Span,
+        op: HirUnaryOp,
+        expr: Box<HirExpr>,
+    },
+    Binary {
+        span: Span,
+        op: HirBinaryOp,
+        left: Box<HirExpr>,
+        right: Box<HirExpr>,
+    },
     If {
         span: Span,
         cond: Box<HirExpr>,
@@ -155,7 +188,10 @@ pub enum HirExpr {
         scrutinee: Box<HirExpr>,
         arms: Vec<HirMatchArm>,
     },
-    Block { span: Span, block: HirBlock },
+    Block {
+        span: Span,
+        block: HirBlock,
+    },
     Let {
         span: Span,
         pat: HirPat,
@@ -163,9 +199,17 @@ pub enum HirExpr {
         is_mut: bool,
         init: Box<HirExpr>,
     },
-    Return { span: Span, expr: Option<Box<HirExpr>> },
-    Break { span: Span, expr: Option<Box<HirExpr>> },
-    Continue { span: Span },
+    Return {
+        span: Span,
+        expr: Option<Box<HirExpr>>,
+    },
+    Break {
+        span: Span,
+        expr: Option<Box<HirExpr>>,
+    },
+    Continue {
+        span: Span,
+    },
     Ask {
         span: Span,
         model: HirExprPath,
@@ -187,7 +231,11 @@ pub enum HirExpr {
         effect: HirEffectRef,
         args: Vec<HirExpr>,
     },
-    New { span: Span, ty: HirType, args: Vec<HirExpr> },
+    New {
+        span: Span,
+        ty: HirType,
+        args: Vec<HirExpr>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -200,14 +248,41 @@ pub struct HirMatchArm {
 
 #[derive(Debug, Clone)]
 pub enum HirPat {
-    Wild { span: Span },
-    Ident { span: Span, name: String, is_mut: bool },
-    Literal { span: Span, lit: HirLiteral },
-    Tuple { span: Span, pats: Vec<HirPat> },
-    Struct { span: Span, path: HirTypePath, fields: Vec<HirPatField> },
-    Enum { span: Span, path: HirTypePath, fields: Vec<HirPat> },
-    Or { span: Span, pats: Vec<HirPat> },
-    Ref { span: Span, is_mut: bool, pat: Box<HirPat> },
+    Wild {
+        span: Span,
+    },
+    Ident {
+        span: Span,
+        name: String,
+        is_mut: bool,
+    },
+    Literal {
+        span: Span,
+        lit: HirLiteral,
+    },
+    Tuple {
+        span: Span,
+        pats: Vec<HirPat>,
+    },
+    Struct {
+        span: Span,
+        path: HirTypePath,
+        fields: Vec<HirPatField>,
+    },
+    Enum {
+        span: Span,
+        path: HirTypePath,
+        fields: Vec<HirPat>,
+    },
+    Or {
+        span: Span,
+        pats: Vec<HirPat>,
+    },
+    Ref {
+        span: Span,
+        is_mut: bool,
+        pat: Box<HirPat>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -306,19 +381,55 @@ impl HirTypePath {
 
 #[derive(Debug, Clone)]
 pub enum HirType {
-    Unit { span: Span },
-    Never { span: Span },
-    Bool { span: Span },
-    Int { span: Span },
-    Float { span: Span },
-    String { span: Span },
-    Path { span: Span, path: HirTypePath },
-    Ref { span: Span, is_mut: bool, ty: Box<HirType> },
-    Owned { span: Span, ty: Box<HirType> },
-    Claim { span: Span, ty: Box<HirType> },
-    Verified { span: Span, ty: Box<HirType>, policy: Box<HirType> },
-    Array { span: Span, ty: Box<HirType>, size: Option<Box<HirExpr>> },
-    Tuple { span: Span, types: Vec<HirType> },
+    Unit {
+        span: Span,
+    },
+    Never {
+        span: Span,
+    },
+    Bool {
+        span: Span,
+    },
+    Int {
+        span: Span,
+    },
+    Float {
+        span: Span,
+    },
+    String {
+        span: Span,
+    },
+    Path {
+        span: Span,
+        path: HirTypePath,
+    },
+    Ref {
+        span: Span,
+        is_mut: bool,
+        ty: Box<HirType>,
+    },
+    Owned {
+        span: Span,
+        ty: Box<HirType>,
+    },
+    Claim {
+        span: Span,
+        ty: Box<HirType>,
+    },
+    Verified {
+        span: Span,
+        ty: Box<HirType>,
+        policy: Box<HirType>,
+    },
+    Array {
+        span: Span,
+        ty: Box<HirType>,
+        size: Option<Box<HirExpr>>,
+    },
+    Tuple {
+        span: Span,
+        types: Vec<HirType>,
+    },
     Fn {
         span: Span,
         params: Vec<HirType>,
@@ -362,8 +473,15 @@ pub struct HirEnumVariant {
 
 #[derive(Debug, Clone)]
 pub enum HirEnumField {
-    Tuple { span: Span, ty: HirType },
-    Named { span: Span, name: String, ty: HirType },
+    Tuple {
+        span: Span,
+        ty: HirType,
+    },
+    Named {
+        span: Span,
+        name: String,
+        ty: HirType,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -384,9 +502,19 @@ pub struct HirUseDecl {
 
 #[derive(Debug, Clone)]
 pub enum HirUsePath {
-    Simple { span: Span, path: HirTypePath },
-    Glob { span: Span, prefix: HirTypePath },
-    Group { span: Span, prefix: HirTypePath, items: Vec<HirUsePath> },
+    Simple {
+        span: Span,
+        path: HirTypePath,
+    },
+    Glob {
+        span: Span,
+        prefix: HirTypePath,
+    },
+    Group {
+        span: Span,
+        prefix: HirTypePath,
+        items: Vec<HirUsePath>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -611,7 +739,11 @@ fn lower_use_path(p: &UsePath) -> HirUsePath {
             span: *span,
             prefix: lower_type_path(prefix),
         },
-        UsePath::Group { span, prefix, items } => HirUsePath::Group {
+        UsePath::Group {
+            span,
+            prefix,
+            items,
+        } => HirUsePath::Group {
             span: *span,
             prefix: lower_type_path(prefix),
             items: items.iter().map(lower_use_path).collect(),
@@ -827,11 +959,7 @@ fn lower_stmt(s: &Stmt) -> HirStmt {
             then_branch: lower_block(then_branch),
             else_branch: else_branch.as_ref().map(|e| Box::new(lower_stmt(e))),
         },
-        Stmt::While {
-            span,
-            cond,
-            body,
-        } => HirStmt::While {
+        Stmt::While { span, cond, body } => HirStmt::While {
             span: *span,
             cond: lower_expr(cond),
             body: lower_block(body),
@@ -904,11 +1032,7 @@ fn lower_expr(e: &Expr) -> HirExpr {
             fields: fields.iter().map(lower_struct_expr_field).collect(),
             base: base.as_ref().map(|e| Box::new(lower_expr(e))),
         },
-        Expr::Call {
-            span,
-            callee,
-            args,
-        } => HirExpr::Call {
+        Expr::Call { span, callee, args } => HirExpr::Call {
             span: *span,
             callee: Box::new(lower_expr(callee)),
             args: args.iter().map(lower_expr).collect(),
@@ -924,20 +1048,12 @@ fn lower_expr(e: &Expr) -> HirExpr {
             method: method.name.clone(),
             args: args.iter().map(lower_expr).collect(),
         },
-        Expr::Field {
-            span,
-            base,
-            field,
-        } => HirExpr::Field {
+        Expr::Field { span, base, field } => HirExpr::Field {
             span: *span,
             base: Box::new(lower_expr(base)),
             field: field.name.clone(),
         },
-        Expr::Index {
-            span,
-            base,
-            index,
-        } => HirExpr::Index {
+        Expr::Index { span, base, index } => HirExpr::Index {
             span: *span,
             base: Box::new(lower_expr(base)),
             index: Box::new(lower_expr(index)),
@@ -1030,11 +1146,7 @@ fn lower_expr(e: &Expr) -> HirExpr {
             span: *span,
             prompt: prompt.clone(),
         },
-        Expr::CommitOnce {
-            span,
-            effect,
-            args,
-        } => HirExpr::CommitOnce {
+        Expr::CommitOnce { span, effect, args } => HirExpr::CommitOnce {
             span: *span,
             effect: lower_effect_ref(effect),
             args: args.iter().map(lower_expr).collect(),
@@ -1123,11 +1235,7 @@ fn lower_binary_op(op: BinaryOp) -> HirBinaryOp {
 fn lower_pat(p: &Pat) -> HirPat {
     match p {
         Pat::Wild { span } => HirPat::Wild { span: *span },
-        Pat::Ident {
-            span,
-            name,
-            is_mut,
-        } => HirPat::Ident {
+        Pat::Ident { span, name, is_mut } => HirPat::Ident {
             span: *span,
             name: name.name.clone(),
             is_mut: *is_mut,
@@ -1140,20 +1248,12 @@ fn lower_pat(p: &Pat) -> HirPat {
             span: *span,
             pats: pats.iter().map(lower_pat).collect(),
         },
-        Pat::Struct {
-            span,
-            path,
-            fields,
-        } => HirPat::Struct {
+        Pat::Struct { span, path, fields } => HirPat::Struct {
             span: *span,
             path: lower_type_path(path),
             fields: fields.iter().map(lower_pat_field).collect(),
         },
-        Pat::Enum {
-            span,
-            path,
-            fields,
-        } => HirPat::Enum {
+        Pat::Enum { span, path, fields } => HirPat::Enum {
             span: *span,
             path: lower_type_path(path),
             fields: fields.iter().map(lower_pat).collect(),
@@ -1162,11 +1262,7 @@ fn lower_pat(p: &Pat) -> HirPat {
             span: *span,
             pats: pats.iter().map(lower_pat).collect(),
         },
-        Pat::Ref {
-            span,
-            is_mut,
-            pat,
-        } => HirPat::Ref {
+        Pat::Ref { span, is_mut, pat } => HirPat::Ref {
             span: *span,
             is_mut: *is_mut,
             pat: Box::new(lower_pat(pat)),
@@ -1350,14 +1446,20 @@ mod tests {
         assert_eq!(body.stmts.len(), 5);
 
         // Stmt 0: `let reason_call = reason("...")` → HirExpr::Call
-        if let HirStmt::Let { init: Some(init), .. } = &body.stmts[0] {
+        if let HirStmt::Let {
+            init: Some(init), ..
+        } = &body.stmts[0]
+        {
             assert!(matches!(init, HirExpr::Call { .. }));
         } else {
             panic!("stmt[0] should be Let with Call init");
         }
 
         // Stmt 1: `let assessed = verify(raw_action, RiskAssessment)` → Verify
-        if let HirStmt::Let { init: Some(init), .. } = &body.stmts[1] {
+        if let HirStmt::Let {
+            init: Some(init), ..
+        } = &body.stmts[1]
+        {
             match init {
                 HirExpr::Verify { claim, policy, .. } => {
                     assert!(matches!(claim.as_ref(), HirExpr::Path { .. }));
@@ -1371,10 +1473,16 @@ mod tests {
         }
 
         // Stmt 2: `let log = audit_service.log_action(assessed)` → MethodCall
-        if let HirStmt::Let { init: Some(init), .. } = &body.stmts[2] {
+        if let HirStmt::Let {
+            init: Some(init), ..
+        } = &body.stmts[2]
+        {
             match init {
                 HirExpr::MethodCall {
-                    receiver, method, args, ..
+                    receiver,
+                    method,
+                    args,
+                    ..
                 } => {
                     assert!(matches!(receiver.as_ref(), HirExpr::Path { .. }));
                     assert_eq!(method, "log_action");
@@ -1396,20 +1504,20 @@ mod tests {
         // not yet emit it for real source. Lowering must still handle it
         // when present in the AST (e.g. synthesized in future passes).
         let ast = Module {
-            span: Span::single(FileId::new(0), crate::span::ByteOffset(0)),
+            span: Span::single(FileId::new(0), aethel_syntax::span::ByteOffset(0)),
             items: vec![Item::Fn(FnDef {
-                span: Span::single(FileId::new(0), crate::span::ByteOffset(0)),
+                span: Span::single(FileId::new(0), aethel_syntax::span::ByteOffset(0)),
                 name: Ident::dummy("synth"),
                 generics: Vec::new(),
                 params: Vec::new(),
                 ret_type: None,
                 effects: EffectSet::default(),
                 body: Some(Block {
-                    span: Span::single(FileId::new(0), crate::span::ByteOffset(0)),
+                    span: Span::single(FileId::new(0), aethel_syntax::span::ByteOffset(0)),
                     stmts: vec![Stmt::Expr {
-                        span: Span::single(FileId::new(0), crate::span::ByteOffset(0)),
+                        span: Span::single(FileId::new(0), aethel_syntax::span::ByteOffset(0)),
                         expr: Expr::Reason {
-                            span: Span::single(FileId::new(0), crate::span::ByteOffset(0)),
+                            span: Span::single(FileId::new(0), aethel_syntax::span::ByteOffset(0)),
                             prompt: "synth-prompt".into(),
                         },
                     }],
