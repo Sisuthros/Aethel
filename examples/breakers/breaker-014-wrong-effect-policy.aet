@@ -1,0 +1,28 @@
+// BREAKER 014 — Wrong effect gets the verified call
+// Verified with PolicyA passed to effect that expects PolicyB
+// Expected: AE-EPISTEMIC-003 (policy mismatch)
+
+struct Data { x: int }
+
+fn wrong_effect(c: Claim<Data>) -> int
+uses Alfa, Bravo:
+    {
+        let v = verify(c, PolicyA);
+        return bravo.process(v);
+    }
+
+effect Alfa {
+    fn process(data: Verified<Data, PolicyA>) -> int
+}
+
+effect Bravo {
+    fn process(data: Verified<Data, PolicyB>) -> int
+}
+
+policy PolicyA {
+    Data: Data { evidence SignedAttestation "a" }
+}
+
+policy PolicyB {
+    Data: Data { evidence SignedAttestation "b" }
+}

@@ -1,0 +1,12 @@
+// BREAKER 018 — No policy at all, but try to use effect
+// Expected: AE-EPISTEMIC-001
+
+struct X { v: int }
+
+fn no_policy(c: Claim<X>) -> int
+uses Exec:
+    { return exec.run(c); }
+
+effect Exec {
+    fn run(v: Verified<X, SomePolicy>) -> int
+}

@@ -5,7 +5,7 @@ use aethel_ir::lower::*;
 use aethel_syntax::diagnostic::{Diagnostics, DiagnosticCode, DiagnosticSeverity};
 use aethel_syntax::span::{FileId, Span};
 use aethel_effects::EffectRegistry;
-use crate::types::HirExprSpan;
+use crate::types::{HirExprSpan, check_assignable};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -16,6 +16,7 @@ pub struct CheckContext {
     pub effect_registry: EffectRegistry,
     pub type_env: TypeEnvironment,
     pub policy_registry: PolicyRegistry,
+    pub current_fn_return_type: Option<IrType>,
 }
 
 /// Type environment for checking with proper scoping.
@@ -107,6 +108,7 @@ impl CheckContext {
             effect_registry: EffectRegistry::default(),
             type_env: TypeEnvironment::default(),
             policy_registry: PolicyRegistry::default(),
+            current_fn_return_type: None,
         }
     }
 
@@ -319,6 +321,9 @@ fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Mo
 
     for item in &module.items {
         if let Item::Fn(f) = item {
+            // Set current function's return type for checking return statements
+            ctx.current_fn_return_type = f.ret_type.as_ref().map(|t| ir_type_from_ast_type(t));
+
             ctx.type_env.enter_scope();
             // Add parameters to type environment
             for param in &f.params {
@@ -335,6 +340,7 @@ fn check_function_bodies(ctx: &mut CheckContext, module: &aethel_syntax::ast::Mo
                 check_block_for_epistemic_violations(ctx, body, &f.effects.effects);
             }
             ctx.type_env.exit_scope();
+            ctx.current_fn_return_type = None;
         }
     }
 }
@@ -353,8 +359,24 @@ fn check_block_for_epistemic_violations(
             Stmt::Expr { expr, .. } => {
                 check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
-            Stmt::Return { expr, .. } => {
-                if let Some(expr) = expr {
+            Stmt::Return { expr, span, .. } => {
+                // TYPE CHECK: return expression vs function return type
+                if let (Some(ret_ty), Some(ret_expr)) = (&ctx.current_fn_return_type, expr) {
+                    let deref: &aethel_syntax::ast::Expr = ret_expr;
+                    if let Expr::Path { path, .. } = deref {
+                        let name = path.segments.last().map(|s| s.name.name.as_str()).unwrap_or("");
+                        if let Some(var_info) = ctx.type_env.variables.get(name) {
+                            if let Err(msg) = check_assignable(&var_info.ty, ret_ty) {
+                                ctx.error(
+                                    aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                                    &format!("type mismatch in `return`: {}", msg),
+                                    *span,
+                                );
+                            }
+                        }
+                    }
+                    check_expr_for_epistemic_violations(ctx, ret_expr, declared_effects);
+                } else if let Some(expr) = expr {
                     check_expr_for_epistemic_violations(ctx, expr, declared_effects);
                 }
             }
@@ -440,12 +462,17 @@ fn check_expr_for_epistemic_violations(
             let found_effect_op = {
                 let effect_registry = &ctx.effect_registry;
                 receiver_name.and_then(|rname| {
+                    // Exact match first
                     if let Some(ef) = effect_registry.get(rname) {
                         return ef.operations.iter().find(|o| o.name == method.name);
                     }
-                    for (_, ef) in &effect_registry.effects {
-                        if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
-                            return Some(op);
+                    // Case-insensitive match
+                    let rname_lower = rname.to_lowercase();
+                    for (ename, ef) in &effect_registry.effects {
+                        if ename.to_lowercase() == rname_lower {
+                            if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
+                                return Some(op);
+                            }
                         }
                     }
                     None
@@ -453,10 +480,24 @@ fn check_expr_for_epistemic_violations(
             };
 
             if let Some(op) = found_effect_op {
-                // Clone op details to avoid borrowing ctx twice
                 let op_params = op.params.clone();
                 let op_name = op.name.clone();
-                drop(found_effect_op);
+                let effect_name = receiver_name.map(|s| s.to_string()).unwrap_or_default();
+                let expected_args = op_params.len();
+                drop(op);
+
+                // TYPE CHECK: argument count matches parameter count (before borrow issues)
+                if args.len() != expected_args {
+                    ctx.error(
+                        aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                        &format!(
+                            "effect `{}.{}` expects {} argument(s), got {}",
+                            effect_name, method.name, expected_args, args.len()
+                        ),
+                        *span,
+                    );
+                }
+
                 // Check each argument against the operation's parameter types
                 for (i, arg) in args.iter().enumerate() {
                     if i < op_params.len() {
@@ -466,13 +507,34 @@ fn check_expr_for_epistemic_violations(
                         if needs_verified {
                             if let Expr::Path { path: arg_path, .. } = arg {
                                 if let Some(arg_name) = arg_path.segments.first().map(|s| s.name.name.as_str()) {
-                                    if let Some(var_info) = ctx.type_env.get_variable(arg_name) {
-                                        if matches!(var_info.ty, IrType::Claim { .. }) {
+                                    let var_ty = ctx.type_env.get_variable(arg_name).map(|v| v.ty.clone());
+                                    if let Some(ref ty) = var_ty {
+                                        if matches!(ty, IrType::Claim { .. }) {
                                             ctx.error(
                                                 aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
                                                 &format!("unverified claim cannot authorize `{}.{}`", receiver_name.unwrap_or("?"), method.name),
                                                 *span,
                                             );
+                                        }
+                                        // TYPE CHECK: Verify policy name matches operation's expected policy
+                                        if let IrType::Verified { policy: arg_pol, .. } = ty {
+                                            if let IrType::Verified { policy: param_pol, .. } = &param_ty.ty {
+                                                let arg_pn = match arg_pol.as_ref() {
+                                                    IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                                                    _ => "",
+                                                };
+                                                let param_pn = match param_pol.as_ref() {
+                                                    IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                                                    _ => "",
+                                                };
+                                                if !arg_pn.is_empty() && !param_pn.is_empty() && arg_pn != param_pn {
+                                                    ctx.error(
+                                                        aethel_syntax::diagnostic::codes::EPISTEMIC_POLICY_MISMATCH(),
+                                                        &format!("policy mismatch: verified with `{arg_pn}`, effect requires `{param_pn}`"),
+                                                        *span,
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -512,6 +574,40 @@ fn check_expr_for_epistemic_violations(
                 check_expr_for_epistemic_violations(ctx, expr, declared_effects);
             }
         }
+        // verify(claim, Policy) - check claim is Claim<T> and policy exists
+        Expr::Verify { claim, policy, span } => {
+            let policy_name = policy.segments.first().map(|s| s.name.name.as_str()).unwrap_or("");
+            if !policy_name.is_empty() && !ctx.policy_registry.policies.contains_key(policy_name) {
+                ctx.error(
+                    aethel_syntax::diagnostic::codes::UNDEFINED_TYPE(),
+                    &format!("policy `{policy_name}` is not defined"),
+                    *span,
+                );
+            }
+            // verify() first argument must be a Claim variable
+            match claim.as_ref() {
+                Expr::Path { path, .. } => {
+                    let name = path.segments.last().map(|s| s.name.name.as_str()).unwrap_or("");
+                    if let Some(var_info) = ctx.type_env.get_variable(name) {
+                        if !matches!(var_info.ty, IrType::Claim { .. }) {
+                            ctx.error(
+                                aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                                &format!("verify() expects Claim<T>, not a bare value"),
+                                *span,
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    ctx.error(
+                        aethel_syntax::diagnostic::codes::TYPE_MISMATCH(),
+                        &format!("verify() expects a Claim variable as argument"),
+                        *span,
+                    );
+                }
+            }
+            check_expr_for_epistemic_violations(ctx, claim, declared_effects);
+        }
         Expr::Tuple { exprs, .. } => {
             for e in exprs {
                 check_expr_for_epistemic_violations(ctx, e, declared_effects);
@@ -537,8 +633,14 @@ fn infer_expr_return_type(
 ) -> Option<IrType> {
     use aethel_syntax::ast::Expr;
     match expr {
-        // verify(claim, Policy) -> Verified<T, Policy>
+        // verify(claim, Policy) - check that policy exists before inferring type
         Expr::Verify { claim, policy, span } => {
+            // First verify the policy exists
+            let policy_name = policy.segments.first()
+                .map(|s| s.name.name.as_str()).unwrap_or("").to_string();
+            if !policy_name.is_empty() && !ctx.policy_registry.policies.contains_key(&policy_name) {
+                return None;
+            }
             // Get the inner type T from Claim<T>
             if let Expr::Path { path: claim_path, .. } = claim.as_ref() {
                 if let Some(claim_name) = claim_path.segments.first().map(|s| s.name.name.as_str()) {
@@ -599,26 +701,37 @@ fn infer_expr_return_type(
             })
         }
         // Method calls on effects: look up return type from effect registry
-        Expr::MethodCall { receiver, method, span, .. } => {
+        Expr::MethodCall { receiver, method, .. } => {
             let receiver_name = if let Expr::Path { path, .. } = receiver.as_ref() {
                 path.segments.first().map(|s| s.name.name.as_str())
             } else {
                 None
             };
-            receiver_name.and_then(|rname| {
-                // Look up the effect operation return type
-                // Check declared effects first, then registered
-                let is_declared = declared_effects.iter().any(|e| {
-                    e.path.segments.first().map(|s| s.name.name.as_str() == rname).unwrap_or(false)
-                });
-                if !is_declared {
-                    return None;
-                }
+            // Try to find the effect by receiver name; if not found, search all effects by operation name
+            let result = receiver_name.and_then(|rname| {
                 ctx.effect_registry.get(rname).and_then(|ef| {
                     ef.operations.iter().find(|o| o.name == method.name)
                         .and_then(|op| op.ret_type.clone())
                 })
+            });
+            // Fallback: search all registered effects by operation name
+            result.or_else(|| {
+                for (_, ef) in &ctx.effect_registry.effects {
+                    if let Some(op) = ef.operations.iter().find(|o| o.name == method.name) {
+                        return op.ret_type.clone();
+                    }
+                }
+                None
             })
+        }
+        // Path expression: look up variable type from environment
+        Expr::Path { path, .. } => {
+            let name = path.segments.last().map(|s| s.name.name.as_str()).unwrap_or("");
+            if let Some(var_info) = ctx.type_env.variables.get(name) {
+                Some(var_info.ty.clone())
+            } else {
+                None
+            }
         }
         _ => None,
     }
@@ -822,19 +935,8 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
             Some(IrExpr::Literal { span, lit: lower_literal(lit) })
         }
         HirExpr::Path { path, .. } => {
-            let name = path.segments.last()
-                .map(|s| s.name.clone())
-                .unwrap_or_default();
             let ir_path = IrExpr::Path { span, path: lower_expr_path(path) };
-            // Look up the type from the environment
-            if let Some(var_info) = ctx.type_env.resolve_variable(&name) {
-                let ir_type = var_info.ty.clone();
-                Some(ir_path.with_type(ir_type))
-            } else if let Some(_type_symbol) = ctx.type_env.resolve_type(&name) {
-                Some(ir_path)
-            } else {
-                Some(ir_path)
-            }
+            Some(ir_path)
         }
         HirExpr::Tuple { exprs, .. } => {
             Some(IrExpr::Tuple { span, exprs: exprs.iter().map(|e| check_expr(ctx, e)).collect::<Option<Vec<_>>>()? })
