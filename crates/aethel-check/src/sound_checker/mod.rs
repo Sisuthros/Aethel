@@ -82,4 +82,88 @@ mod tests {
             .iter()
             .any(|diag| diag.code == codes::EPISTEMIC_POLICY_MISMATCH()));
     }
+
+    #[test]
+    fn rejects_evidence_kind_mismatch() {
+        // Breaker-009: policy requires HumanReview, but `verify` can only
+        // produce SignedAttestation evidence → AE-EPISTEMIC-003.
+        let diagnostics = check(
+            r#"
+            struct Order { id: string }
+            policy P { Order: Order { evidence HumanReview "needs human" } }
+            effect Pay { fn charge(order: Verified<Order, P>) -> int }
+            fn f(c: Claim<Order>) -> int
+            uses Pay:
+                {
+                    let v = verify(c, P);
+                    return pay.charge(v);
+                }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::EPISTEMIC_POLICY_MISMATCH()));
+    }
+
+    #[test]
+    fn accepts_signed_attestation_evidence() {
+        // A policy requiring SignedAttestation is satisfiable by `verify`.
+        let diagnostics = check(
+            r#"
+            struct Order { id: string }
+            policy P { Order: Order { evidence SignedAttestation "signed" } }
+            effect Pay { fn charge(order: Verified<Order, P>) -> int }
+            fn f(c: Claim<Order>) -> int
+            uses Pay:
+                {
+                    let v = verify(c, P);
+                    return pay.charge(v);
+                }
+            "#,
+        );
+        assert!(!diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::EPISTEMIC_POLICY_MISMATCH()));
+    }
+
+    #[test]
+    fn rejects_unconsumed_claim() {
+        // Breaker-016: a Claim parameter that is never verified is a linear
+        // type violation → AE-TYPE-013.
+        let diagnostics = check(
+            r#"
+            fn f(c: Claim<int>) -> int {
+                let x = 42;
+                return x;
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
+    }
+
+    #[test]
+    fn accepts_consumed_claim() {
+        // Verifying the Claim parameter consumes it — no linear violation.
+        let diagnostics = check(
+            r#"
+            policy P { Amount: int { evidence SignedAttestation "ok" } }
+            effect Pay { fn refund(amount: Verified<int, P>) -> int }
+            fn f(c: Claim<int>) -> int
+            uses Pay:
+                {
+                    let v = verify(c, P);
+                    return pay.refund(v);
+                }
+            "#,
+        );
+        assert!(!diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
+    }
 }

@@ -472,6 +472,13 @@ impl SemanticChecker {
         claim: &hir::HirExpr,
         policy: &hir::HirTypePath,
     ) -> ir::IrType {
+        // Linear consumption: verifying a Claim path consumes it.
+        if let hir::HirExpr::Path { path, .. } = claim {
+            let name = expr_path_name(path);
+            if self.linear_params.iter().any(|(n, _)| n == &name) {
+                self.linear_consumed.insert(name);
+            }
+        }
         let claim_ty = self.check_expr(claim);
         let inner = match claim_ty {
             ir::IrType::Claim { ty, .. } => *ty,
@@ -505,6 +512,27 @@ impl SemanticChecker {
                 format!("unknown verification policy `{policy_name}`"),
                 span,
             );
+        }
+        // Evidence-kind matching: `verify` produces SignedAttestation evidence.
+        // A policy claim that declares evidence requirements must include
+        // SignedAttestation, otherwise verification cannot satisfy it.
+        if let Some(claims) = self.policy_evidence.get(&policy_name) {
+            if let Some((_, kinds)) = claims.iter().find(|(ty, _)| self.types_equal(ty, &inner)) {
+                if !kinds.is_empty()
+                    && !kinds
+                        .iter()
+                        .any(|k| matches!(k, hir::HirEvidenceKind::SignedAttestation))
+                {
+                    self.error(
+                        codes::EPISTEMIC_POLICY_MISMATCH(),
+                        format!(
+                            "policy `{policy_name}` requires evidence kind(s) [{}], but `verify` produces SignedAttestation evidence",
+                            format_evidence_kinds(kinds)
+                        ),
+                        span,
+                    );
+                }
+            }
         }
         ir::IrType::Verified {
             span,
@@ -562,4 +590,19 @@ impl SemanticChecker {
             }
         }
     }
+}
+
+/// Human-readable names for evidence kinds in diagnostics.
+fn format_evidence_kinds(kinds: &[hir::HirEvidenceKind]) -> String {
+    kinds
+        .iter()
+        .map(|k| match k {
+            hir::HirEvidenceKind::SignedAttestation => "SignedAttestation",
+            hir::HirEvidenceKind::CryptographicProof => "CryptographicProof",
+            hir::HirEvidenceKind::AuditLog => "AuditLog",
+            hir::HirEvidenceKind::HumanReview => "HumanReview",
+            hir::HirEvidenceKind::Custom(s) => s.as_str(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }

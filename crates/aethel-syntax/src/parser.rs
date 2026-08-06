@@ -416,6 +416,13 @@ impl<'a> Parser<'a> {
             let mut evidence = Vec::new();
             if self.eat(TokenKind::LBrace) {
                 while !self.check(TokenKind::RBrace) && !self.is_at_end() {
+                    // The `evidence` keyword precedes the kind — consume it so
+                    // it is not parsed as a Custom evidence kind itself.
+                    if let TokenKind::Ident(name) = &self.current_token().kind {
+                        if name == "evidence" {
+                            self.advance();
+                        }
+                    }
                     let ev_start = self.current_span();
                     let kind = self.parse_evidence_kind()?;
                     let description = if let Some(s) = self.parse_string_literal() {

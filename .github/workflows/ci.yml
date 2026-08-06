@@ -136,4 +136,4 @@ jobs:
           done < examples/breakers/known-gaps.tsv
           echo ""
           if [ $FAILURES -ne 0 ]; then echo "❌ $FAILURES failure(s)"; exit 1; fi
-          printf "✅ required breakers: 18/18 PASS\\n   known gaps: 2 XFAIL\\n"
+          printf "✅ required breakers: 20/20 PASS\n   known gaps: 0 XFAIL\n"

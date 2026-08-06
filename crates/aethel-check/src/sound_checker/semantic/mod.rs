@@ -32,6 +32,8 @@ pub(super) struct SemanticChecker {
     diagnostics: Diagnostics,
     effects: HashMap<String, HashMap<String, OperationSig>>,
     policies: HashMap<String, Vec<ir::IrType>>,
+    /// Policy → (claim type, required evidence kinds) for evidence-kind matching.
+    policy_evidence: HashMap<String, Vec<(ir::IrType, Vec<hir::HirEvidenceKind>)>>,
     functions: HashMap<String, FunctionSig>,
     structs: HashMap<String, HashMap<String, ir::IrType>>,
     aliases: HashMap<String, ir::IrType>,
@@ -39,6 +41,10 @@ pub(super) struct SemanticChecker {
     scopes: Vec<HashMap<String, ir::IrType>>,
     current_return: Option<ir::IrType>,
     current_effects: Vec<String>,
+    /// Names of Claim-typed parameters in the current function that must be consumed.
+    linear_params: Vec<(String, Span)>,
+    /// Names of Claim-typed parameters already consumed via `verify` in the current function.
+    linear_consumed: HashSet<String>,
 }
 
 impl SemanticChecker {
@@ -75,6 +81,18 @@ impl SemanticChecker {
                         def.claims
                             .iter()
                             .map(|claim| lower_type(&claim.ty))
+                            .collect(),
+                    );
+                    self.policy_evidence.insert(
+                        def.name.clone(),
+                        def.claims
+                            .iter()
+                            .map(|claim| {
+                                (
+                                    lower_type(&claim.ty),
+                                    claim.evidence.iter().map(|e| e.kind.clone()).collect(),
+                                )
+                            })
                             .collect(),
                     );
                 }
@@ -333,6 +351,8 @@ impl SemanticChecker {
     pub(super) fn check_fn(&mut self, def: &hir::HirFnDef) {
         let old_return = self.current_return.clone();
         let old_effects = self.current_effects.clone();
+        let old_linear_params = std::mem::take(&mut self.linear_params);
+        let old_linear_consumed = std::mem::take(&mut self.linear_consumed);
         self.current_return = Some(
             def.ret_type
                 .as_ref()
@@ -345,6 +365,14 @@ impl SemanticChecker {
             .map(|effect| type_path_name(&effect.path))
             .collect();
 
+        // Linear types: Claim-typed parameters must be consumed via `verify`
+        // before the function body ends.
+        for param in &def.params {
+            if matches!(lower_type(&param.ty), ir::IrType::Claim { .. }) {
+                self.linear_params.push((param.name.clone(), param.span));
+            }
+        }
+
         self.push_scope();
         for param in &def.params {
             self.bind(param.name.clone(), lower_type(&param.ty), param.span);
@@ -356,6 +384,25 @@ impl SemanticChecker {
             }
         }
         self.pop_scope();
+
+        let unconsumed: Vec<(String, Span)> = self
+            .linear_params
+            .iter()
+            .filter(|(name, _)| !self.linear_consumed.contains(name))
+            .cloned()
+            .collect();
+        for (name, span) in unconsumed {
+            self.error(
+                codes::LINEAR_NOT_CONSUMED(),
+                format!(
+                    "claim parameter `{name}` is never verified — linear Claim values must be consumed with `verify`"
+                ),
+                span,
+            );
+        }
+
+        self.linear_params = old_linear_params;
+        self.linear_consumed = old_linear_consumed;
         self.current_return = old_return;
         self.current_effects = old_effects;
     }

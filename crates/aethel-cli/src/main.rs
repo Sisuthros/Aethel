@@ -113,28 +113,21 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
         std::process::exit(1);
     }
 
-    if check_diagnostics.warnings().is_empty() {
-        println!(
-            "{} {}",
-            "✓".green(),
-            format!("{} type checks", file.display()).green()
-        );
-    } else {
-        for warn in check_diagnostics.warnings() {
-            eprintln!("{} {}", "warning:".yellow(), warn.message);
-        }
-        println!(
-            "{} {}",
-            "✓".green(),
-            format!("{} type checks (with warnings)", file.display()).green()
-        );
-    }
-
     Ok((ir_module, file_id))
 }
 
 fn check_file(file: &PathBuf) -> anyhow::Result<()> {
-    compile_and_check(file)?;
+    let (_ir_module, _file_id) = compile_and_check(file)?;
+
+    // Print success message only for check command, not for emit-ir
+    if std::env::args().any(|arg| arg == "check") {
+        eprintln!(
+            "{} {}",
+            "✓".green(),
+            format!("{} type checks", file.display()).green()
+        );
+    }
+
     Ok(())
 }
 
