@@ -73,8 +73,15 @@ impl<'a> Parser<'a> {
             if let Some(item) = self.parse_item() {
                 items.push(item);
             } else {
-                // Error recovery: skip to next item
+                // Error recovery: skip to next item. Guarantee forward progress
+                // so a token that is both a sync point and not an item start
+                // (e.g. RBrace at module level, or KwClaim after a failed
+                // policy parse) cannot cause an infinite loop.
+                let before = self.current;
                 self.skip_to_next_item();
+                if self.current == before {
+                    self.advance();
+                }
             }
         }
 

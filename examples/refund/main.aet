@@ -3,7 +3,7 @@
 
 // Policy defining what constitutes a verified refund decision
 policy RefundPolicy {
-    claim RefundDecision {
+    RefundDecision: RefundDecision {
         evidence SignedAttestation "Merchant signed refund authorization"
         evidence AuditLog "Payment gateway audit trail"
     }
@@ -19,13 +19,15 @@ effect PaymentGateway {
 // This should produce AE-EPISTEMIC-001
 fn refund_invalid(claim: Claim<RefundDecision>) -> Receipt
 uses PaymentGateway:
-    return payments.refund(claim)
+    { return payment_gateway.refund(claim); }
 
 // Valid: Claim is verified before crossing effect boundary
 fn refund_valid(claim: Claim<RefundDecision>) -> Receipt
 uses PaymentGateway:
-    let verified = verify(claim, RefundPolicy)
-    return payments.refund(verified)
+    {
+        let verified = verify(claim, RefundPolicy);
+        return payment_gateway.refund(verified);
+    }
 
 // Types
 struct RefundDecision {
@@ -37,4 +39,8 @@ struct RefundDecision {
 struct Receipt {
     id: string,
     status: string,
+}
+
+struct TransactionId {
+    id: string,
 }
