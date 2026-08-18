@@ -29,3 +29,10 @@ tests/output/
 # Local config
 .env
 *.local.toml
+# Local scratch and runtime state (not part of the published artifact)
+family_bridge.db
+*.db
+out.txt
+fix_all.py
+fix_types.py
+fix_types2.py
