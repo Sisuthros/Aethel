@@ -14,6 +14,9 @@ use super::util::{
     lower_type_path, type_path_name,
 };
 
+// Import HirEvidenceKind for policy evidence tracking
+use aethel_hir::lower::HirEvidenceKind;
+
 mod expr;
 mod types;
 
@@ -34,6 +37,8 @@ pub(super) struct SemanticChecker {
     diagnostics: Diagnostics,
     effects: HashMap<String, HashMap<String, OperationSig>>,
     policies: HashMap<String, Vec<ir::IrType>>,
+    // Track evidence kinds required by each policy's claims
+    policy_evidence: HashMap<String, Vec<HirEvidenceKind>>,
     functions: HashMap<String, FunctionSig>,
     structs: HashMap<String, HashMap<String, ir::IrType>>,
     aliases: HashMap<String, ir::IrType>,
@@ -71,15 +76,27 @@ impl SemanticChecker {
                     self.aliases.insert(def.name.clone(), lower_type(&def.ty));
                 }
                 hir::HirItem::Policy(def) => {
-                    self.known_types.insert(def.name.clone());
-                    self.policies.insert(
-                        def.name.clone(),
-                        def.claims
-                            .iter()
-                            .map(|claim| lower_type(&claim.ty))
-                            .collect(),
-                    );
-                }
+                                    self.known_types.insert(def.name.clone());
+                                    self.policies.insert(
+                                        def.name.clone(),
+                                        def.claims
+                                            .iter()
+                                            .map(|claim| lower_type(&claim.ty))
+                                            .collect(),
+                                    );
+                                    // Track evidence kinds required by this policy's claims
+                                    let evidence_kinds: Vec<HirEvidenceKind> = def
+                                        .claims
+                                        .iter()
+                                        .flat_map(|claim| {
+                                            claim.evidence.iter().map(|ev| ev.kind.clone())
+                                        })
+                                        .collect();
+                                    if !evidence_kinds.is_empty() {
+                                        self.policy_evidence
+                                            .insert(def.name.clone(), evidence_kinds);
+                                    }
+                                }
                 hir::HirItem::Effect(def) => {
                     self.effects.insert(
                         def.name.clone(),

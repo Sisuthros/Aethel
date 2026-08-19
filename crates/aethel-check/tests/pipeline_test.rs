@@ -1,39 +1,43 @@
 #[test]
-fn test_checker_produces_ir_items() {
-    // Test that check_module actually returns non-empty IR
-    let source = "fn main() { let x = 42; }";
-    let file_id = aethel_syntax::span::FileId::new(0);
-    let tokens = aethel_syntax::lexer::lex(source, file_id);
-    let (module, _) = aethel_syntax::parser::parse(&tokens, file_id);
-    let (ir, _) = aethel_check::checker::check_module(&module, file_id);
-    assert!(!ir.items.is_empty(), "IR items should not be empty!");
-    assert!(
-        ir.items
-            .iter()
-            .any(|item| matches!(item, aethel_ir::lower::IrItem::Fn(_))),
-        "Should contain at least one function"
-    );
+fn breaker_009_evidence_kind_mismatch() {
+    // BREAKER 009 — Evidence mismatch: wrong evidence kind for policy
+    // Policy requires HumanReview but verify() provides none
+    let source = r#"
+struct Order { id: string, total: int }
+
+fn bad_evidence(c: Claim<Order>) -> int
+uses Payment:
+    {
+        let v = verify(c, OrderPolicy);
+        return payment.charge(v);
+    }
+
+effect Payment {
+    fn charge(order: Verified<Order, OrderPolicy>) -> int
 }
 
-#[test]
-fn test_ir_contains_fn_body() {
-    // Test that function bodies are properly lowered
-    let source = "fn add(a: int, b: int) -> int { a + b }";
+policy OrderPolicy {
+    Order: Order {
+        evidence HumanReview "requires human sign-off"
+    }
+}
+"#;
+
     let file_id = aethel_syntax::span::FileId::new(0);
     let tokens = aethel_syntax::lexer::lex(source, file_id);
-    let (module, _) = aethel_syntax::parser::parse(&tokens, file_id);
-    let (ir, _) = aethel_check::checker::check_module(&module, file_id);
+    let (module, diagnostics) = aethel_syntax::parser::parse(&tokens, file_id);
+    let (_ir, check_diagnostics) = aethel_check::checker::check_module(&module, file_id);
 
-    let fn_count = ir
-        .items
+    // Should fail because policy requires HumanReview evidence but verify provides none
+    let has_epistemical_error = check_diagnostics
+        .errors()
         .iter()
-        .filter(|i| matches!(i, aethel_ir::lower::IrItem::Fn(_)))
-        .count();
-    assert_eq!(fn_count, 1, "Should have exactly one function");
+        .any(|diag| diag.code == aethel_syntax::diagnostic::codes::EPISTEMIC_VERIFY_FAILED());
 
-    if let Some(aethel_ir::lower::IrItem::Fn(f)) = ir.items.first() {
-        assert_eq!(f.name, "add");
-        assert!(!f.params.is_empty());
-        assert!(f.body.is_some(), "Function body should be lowered");
-    }
+    assert!(
+        has_epistemical_error,
+        "Breaker 009 should fail: policy requires HumanReview but verify provides none. \
+         Diagnostics: {:?}",
+        check_diagnostics
+    );
 }

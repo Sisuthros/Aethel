@@ -60,6 +60,8 @@ pub enum TokenKind {
     KwPolicy,
     #[token("effect")]
     KwEffect,
+    #[token("evidence")]
+    KwEvidence,
     #[token("break")]
     KwBreak,
     #[token("continue")]
@@ -216,6 +218,7 @@ impl TokenKind {
             TokenKind::KwVerified => "Verified",
             TokenKind::KwPolicy => "policy",
             TokenKind::KwEffect => "effect",
+            TokenKind::KwEvidence => "evidence",
             TokenKind::KwBreak => "break",
             TokenKind::KwContinue => "continue",
             TokenKind::KwNew => "new",
@@ -331,9 +334,9 @@ mod tests {
 
     #[test]
     fn test_lex_keywords() {
-        let source = "fn let mut return owned if else while for in match type struct enum use mod pub uses ask verify commit once Claim Verified policy effect break continue new";
+        let source = "fn let mut return owned if else while for in match type struct enum use mod pub uses ask verify commit once Claim Verified policy effect evidence break continue new";
         let tokens = lex(source, FileId::new(0));
-        assert_eq!(tokens.len(), 29); // 29 keywords
+        assert_eq!(tokens.len(), 30); // 30 keywords
     }
 
     #[test]

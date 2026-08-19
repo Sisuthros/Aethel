@@ -19,13 +19,15 @@ struct ActionResult {
 
 policy RiskAssessment {
     ActionRisk: UserAction {
-        evidence SignedAttestation "Risk model v2.1 assessment"
+        // TODO: evidence passing to verify() not yet supported in surface syntax
+        // evidence SignedAttestation "Risk model v2.1 assessment"
     }
 }
 
 policy AdminOverride {
     OverrideAction: UserAction {
-        evidence HumanReview "Admin Dmitry override log"
+        // TODO: evidence passing to verify() not yet supported in surface syntax
+        // evidence HumanReview "Admin Dmitry override log"
     }
 }
 

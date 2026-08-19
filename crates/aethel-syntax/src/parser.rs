@@ -66,22 +66,26 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_module(&mut self) -> Module {
-        let start_span = self.current_span();
-        let mut items = Vec::new();
+            let start_span = self.current_span();
+            let mut items = Vec::new();
 
-        while !self.is_at_end() {
-            if let Some(item) = self.parse_item() {
-                items.push(item);
-            } else {
-                // Error recovery: skip to next item
-                self.skip_to_next_item();
+            while !self.is_at_end() {
+                if let Some(item) = self.parse_item() {
+                    items.push(item);
+                } else {
+                    // Error recovery: skip to next item
+                    self.skip_to_next_item();
+                }
             }
-        }
 
-        let end_span = self.previous_span();
-        let span = start_span.merge(end_span);
-        Module { span, items }
-    }
+            let end_span = if self.current > 0 {
+                self.previous_span()
+            } else {
+                start_span
+            };
+            let span = start_span.merge(end_span);
+            Module { span, items }
+        }
 
     fn parse_item(&mut self) -> Option<Item> {
         let start = self.current_span();
@@ -540,7 +544,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_evidence_kind(&mut self) -> Option<EvidenceKind> {
-        // Evidence kinds are now parsed as identifiers (not dedicated keywords)
+        // `evidence` keyword is required, then the evidence kind identifier
+        if !self.eat(TokenKind::KwEvidence) {
+            self.error(
+                codes::PARSE_ERROR(),
+                "expected `evidence` keyword",
+            );
+            return None;
+        }
         if let Some(ident) = self.parse_optional_ident() {
             match ident.name.as_str() {
                 "SignedAttestation" => Some(EvidenceKind::SignedAttestation),

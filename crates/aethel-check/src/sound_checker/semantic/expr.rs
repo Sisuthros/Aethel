@@ -450,54 +450,67 @@ impl SemanticChecker {
     }
 
     pub(super) fn check_verify(
-        &mut self,
-        span: Span,
-        claim: &hir::HirExpr,
-        policy: &hir::HirTypePath,
-    ) -> ir::IrType {
-        let claim_ty = self.check_expr(claim);
-        let inner = match claim_ty {
-            ir::IrType::Claim { ty, .. } => *ty,
-            other => {
+            &mut self,
+            span: Span,
+            claim: &hir::HirExpr,
+            policy: &hir::HirTypePath,
+        ) -> ir::IrType {
+            let claim_ty = self.check_expr(claim);
+            let inner = match claim_ty {
+                ir::IrType::Claim { ty, .. } => *ty,
+                other => {
+                    self.error(
+                        codes::EPISTEMIC_VERIFIED_REQUIRED(),
+                        format!(
+                            "verify requires Claim<T>, found `{}`",
+                            self.format_type(&other)
+                        ),
+                        span,
+                    );
+                    ir::IrType::Unit { span }
+                }
+            };
+            let policy_name = type_path_name(policy);
+            if let Some(accepted) = self.policies.get(&policy_name).cloned() {
+                if !accepted.iter().any(|ty| self.types_equal(ty, &inner)) {
+                    self.error(
+                        codes::EPISTEMIC_VERIFY_FAILED(),
+                        format!(
+                            "policy `{policy_name}` does not accept Claim<{}>",
+                            self.format_type(&inner)
+                        ),
+                        span,
+                    );
+                }
+                // NEW: Check if policy requires evidence but verify() provides none
+                if let Some(required_evidence) = self.policy_evidence.get(&policy_name) {
+                    if !required_evidence.is_empty() {
+                        self.error(
+                            codes::EPISTEMIC_VERIFY_FAILED(),
+                            format!(
+                                "verification failed: policy `{policy_name}` requires evidence {:?} for claim, but verify() provides none",
+                                required_evidence
+                            ),
+                            span,
+                        );
+                    }
+                }
+            } else {
                 self.error(
-                    codes::EPISTEMIC_VERIFIED_REQUIRED(),
-                    format!(
-                        "verify requires Claim<T>, found `{}`",
-                        self.format_type(&other)
-                    ),
+                    codes::UNDEFINED_TYPE(),
+                    format!("unknown verification policy `{policy_name}`"),
                     span,
                 );
-                ir::IrType::Unit { span }
             }
-        };
-        let policy_name = type_path_name(policy);
-        if let Some(accepted) = self.policies.get(&policy_name).cloned() {
-            if !accepted.iter().any(|ty| self.types_equal(ty, &inner)) {
-                self.error(
-                    codes::EPISTEMIC_VERIFY_FAILED(),
-                    format!(
-                        "policy `{policy_name}` does not accept Claim<{}>",
-                        self.format_type(&inner)
-                    ),
+            ir::IrType::Verified {
+                span,
+                ty: Box::new(inner),
+                policy: Box::new(ir::IrType::Path {
                     span,
-                );
+                    path: lower_type_path(policy),
+                }),
             }
-        } else {
-            self.error(
-                codes::UNDEFINED_TYPE(),
-                format!("unknown verification policy `{policy_name}`"),
-                span,
-            );
         }
-        ir::IrType::Verified {
-            span,
-            ty: Box::new(inner),
-            policy: Box::new(ir::IrType::Path {
-                span,
-                path: lower_type_path(policy),
-            }),
-        }
-    }
 
     pub(super) fn check_binary(
         &mut self,

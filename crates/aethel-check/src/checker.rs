@@ -788,8 +788,12 @@ fn collect_type_defs(ctx: &mut CheckContext, item: &aethel_hir::lower::HirItem) 
                 });
             }
             ctx.type_env.type_defs.insert(p.name.clone(), TypeDefinition {
-                kind: TypeDefKind::Policy { claims },
+                kind: TypeDefKind::Policy { claims: claims.clone() },
                 generics: p.generics.iter().map(|g| g.name.clone()).collect(),
+            });
+            ctx.policy_registry.policies.insert(p.name.clone(), PolicyDefinition {
+                name: p.name.clone(),
+                claims,
             });
         }
         _ => {}
@@ -1055,43 +1059,62 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
             })
         }
         HirExpr::Verify { span, claim, policy } => {
-                    // EPISTEMIC TYPE RULE: Claim<T> -> Verified<T, Policy>
-                    // This is where AE-EPISTEMIC-001 is enforced
-                    let claim_expr = check_expr(ctx, claim)?;
-                    let claim_ty = claim_expr.ty();
-            
-                    // Check if claim is Claim<T>
-                    if let aethel_ir::lower::IrType::Claim { ty: inner, .. } = &claim_ty {
-                        // This is a Claim<T> - need to verify it produces Verified<T, Policy>
-                        // The verify expression itself should produce Verified<T, Policy>
-                        Some(IrExpr::Verify {
-                            span: *span,
-                            claim: Box::new(claim_expr),
-                            policy: lower_type_path(policy),
-                        })
-                    } else {
-                        // Not a Claim - error
-                        ctx.error(
-                            aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
-                            "expected `Claim<T>` as argument to `verify`",
-                            claim_expr.span(),
-                        );
-                        Some(IrExpr::Verify {
-                            span: *span,
-                            claim: Box::new(claim_expr),
-                            policy: lower_type_path(policy),
-                        })
+            // EPISTEMIC TYPE RULE: Claim<T> -> Verified<T, Policy>
+            // This is where AE-EPISTEMIC-001 is enforced
+            let claim_expr = check_expr(ctx, claim)?;
+            let claim_ty = claim_expr.ty();
+
+            // Check if claim is Claim<T>
+            if let aethel_ir::lower::IrType::Claim { ty: inner, .. } = &claim_ty {
+                // Evidence requirement check: a policy may declare that a Claim<T> can only be
+                // verified when specific evidence kinds are presented. Aethel's surface syntax does
+                // not yet allow passing evidence to `verify()`, so any non-empty evidence list on
+                // the matching policy claim makes verification impossible and is rejected here.
+                let policy_name = policy.segments.first().map(|s| s.name.as_str()).unwrap_or("");
+                if let Some(policy_def) = ctx.policy_registry.policies.get(policy_name) {
+                    let inner_type_name = match inner.as_ref() {
+                        aethel_ir::lower::IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                        _ => "",
+                    };
+                    if let Some(policy_claim) = policy_def.claims.get(inner_type_name) {
+                        if !policy_claim.evidence.is_empty() {
+                            ctx.error(
+                                aethel_syntax::diagnostic::codes::EPISTEMIC_VERIFY_FAILED(),
+                                &format!("verification failed: policy `{policy_name}` requires evidence {:?} for `{inner_type_name}`, but verify() provides none", policy_claim.evidence),
+                                *span,
+                            );
+                        }
                     }
                 }
-                HirExpr::Reason { span, prompt } => {
-                    // AI primitive that generates a Claim<T> - always produces Claim<String> or Claim<T>
-                    // The actual type depends on the context, but it's fundamentally an untrusted claim
-                    Some(IrExpr::Reason {
-                        span: *span,
-                        prompt: prompt.clone(),
-                    })
-                }
-                HirExpr::CommitOnce { effect, args, .. } => {
+
+                Some(IrExpr::Verify {
+                    span: *span,
+                    claim: Box::new(claim_expr),
+                    policy: lower_type_path(policy),
+                })
+            } else {
+                // Not a Claim - error
+                ctx.error(
+                    aethel_syntax::diagnostic::codes::EPISTEMIC_CLAIM_NOT_VERIFIED(),
+                    "expected `Claim<T>` as argument to `verify`",
+                    claim_expr.span(),
+                );
+                Some(IrExpr::Verify {
+                    span: *span,
+                    claim: Box::new(claim_expr),
+                    policy: lower_type_path(policy),
+                })
+            }
+        }
+        HirExpr::Reason { span, prompt } => {
+            // AI primitive that generates a Claim<T> - always produces Claim<String> or Claim<T>
+            // The actual type depends on the context, but it's fundamentally an untrusted claim
+            Some(IrExpr::Reason {
+                span: *span,
+                prompt: prompt.clone(),
+            })
+        }
+        HirExpr::CommitOnce { effect, args, .. } => {
                             // EPISTEMIC TYPE RULE: Effects require Verified<T, Policy> arguments, not raw Claim<T>
                             let ir_args: Option<Vec<_>> = args.iter().map(|a| check_expr(ctx, a)).collect();
                             let ir_args = ir_args?;

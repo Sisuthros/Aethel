@@ -7,7 +7,8 @@ uses PaymentGateway:
 
 policy RefundPolicy {
     RefundDecision: RefundDecision {
-        evidence SignedAttestation "Merchant signed refund authorization"
+        // TODO: evidence passing to verify() not yet supported in surface syntax
+        // evidence SignedAttestation "Merchant signed refund authorization"
     }
 }
 
