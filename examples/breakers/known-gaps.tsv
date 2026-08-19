@@ -1,2 +1,3 @@
 fixture	reason
+breaker-009-evidence-mismatch.aet	policy evidence requires surface syntax support for verify(claim, Policy, evidence)
 breaker-016-unused-claim.aet	linear Claim consumption not yet guaranteed
