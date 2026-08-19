@@ -8,7 +8,8 @@ effect ApprovalGateway {
 
 policy ApprovalPolicy {
     RequiredCheck: Approval {
-        evidence SignedAttestation "Test"
+        // TODO: evidence passing to verify() not yet supported in surface syntax
+        // evidence SignedAttestation "Test"
     }
 }
 
