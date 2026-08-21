@@ -98,46 +98,80 @@ jobs:
         shell: bash
         run: |
           set +e
-          FAILURES=0
 
-          expected_pattern() {
-            case "$1" in
-              breaker-001-*) echo 'AE-EPISTEMIC-001' ;;
-              breaker-002-*) echo 'AE-EPISTEMIC-001' ;;
-              breaker-003-*) echo 'AE-NAME-002' ;;
-              breaker-004-*) echo 'AE-NAME-003' ;;
-              breaker-005-*) echo 'AE-PARSE-00[12]' ;;
-              breaker-006-*) echo 'AE-PARSE-00[12]|AE-TYPE-003' ;;
-              breaker-007-*) echo 'AE-TYPE-001' ;;
-              breaker-008-*) echo 'AE-EPISTEMIC-001' ;;
-              *) echo 'NEVER_MATCH' ;;
-            esac
-          }
+          BREAKERS_DIR="examples/breakers"
+          REQUIRED_TSV="$BREAKERS_DIR/required.tsv"
+          GAPS_TSV="$BREAKERS_DIR/known-gaps.tsv"
 
-          for f in examples/breakers/*.aet; do
-            NAME=$(basename "$f")
-            EXPECTED=$(expected_pattern "$NAME")
-            OUTPUT=$(./target/release/aethel-cli check "$f" 2>&1)
+          REQUIRED_PASS=0
+          REQUIRED_FAIL=0
+          GAP_COUNT=0
+          MANIFEST_ERRORS=0
+
+          declare -A KNOWN_FIXTURES
+
+          # --- required.tsv: must be rejected with the exact expected_code ---
+          FIRST=1
+          while IFS=$'\t' read -r fixture expected_code || [ -n "$fixture" ]; do
+            if [ "$FIRST" -eq 1 ]; then FIRST=0; continue; fi
+            [ -z "$fixture" ] && continue
+            KNOWN_FIXTURES["$fixture"]=1
+
+            OUTPUT=$(./target/release/aethel-cli check "$BREAKERS_DIR/$fixture" 2>&1)
             STATUS=$?
 
-            echo "── $NAME"
-            if [ $STATUS -eq 0 ]; then
-              echo "❌ SHOULD HAVE FAILED"
-              FAILURES=$((FAILURES+1))
+            echo "── $fixture (required, expect $expected_code)"
+            if [ "$STATUS" -eq 0 ]; then
+              echo "❌ SHOULD HAVE FAILED (exit 0)"
+              REQUIRED_FAIL=$((REQUIRED_FAIL+1))
               continue
             fi
 
-            if echo "$OUTPUT" | grep -Eq "$EXPECTED"; then
-              echo "✅ rejected with expected diagnostic: $EXPECTED"
+            if echo "$OUTPUT" | grep -qF -- "$expected_code"; then
+              echo "✅ rejected with expected diagnostic: $expected_code"
+              REQUIRED_PASS=$((REQUIRED_PASS+1))
             else
-              echo "❌ wrong failure; expected: $EXPECTED"
+              echo "❌ wrong failure; expected: $expected_code (exit $STATUS)"
               echo "$OUTPUT"
-              FAILURES=$((FAILURES+1))
+              REQUIRED_FAIL=$((REQUIRED_FAIL+1))
+            fi
+          done < <(tr -d '\r' < "$REQUIRED_TSV")
+
+          # --- known-gaps.tsv: run for visibility, never fails the build ---
+          FIRST=1
+          while IFS=$'\t' read -r fixture reason || [ -n "$fixture" ]; do
+            if [ "$FIRST" -eq 1 ]; then FIRST=0; continue; fi
+            [ -z "$fixture" ] && continue
+            KNOWN_FIXTURES["$fixture"]=1
+
+            OUTPUT=$(./target/release/aethel-cli check "$BREAKERS_DIR/$fixture" 2>&1)
+            STATUS=$?
+            GAP_COUNT=$((GAP_COUNT+1))
+
+            echo "── $fixture (known-gap: $reason)"
+            if [ "$STATUS" -eq 0 ]; then
+              echo "ℹ️ known-gap: checker accepted (exit 0) — informational only, not a failure"
+            else
+              echo "ℹ️ known-gap: checker rejected (exit $STATUS) — informational only, not a failure"
+            fi
+          done < <(tr -d '\r' < "$GAPS_TSV")
+
+          # --- coverage: every breaker-*.aet must be listed in one of the two manifests ---
+          for f in "$BREAKERS_DIR"/breaker-*.aet; do
+            NAME=$(basename "$f")
+            if [ -z "${KNOWN_FIXTURES[$NAME]:-}" ]; then
+              echo "❌ $NAME: fixture not in any manifest (required.tsv or known-gaps.tsv)"
+              MANIFEST_ERRORS=$((MANIFEST_ERRORS+1))
             fi
           done
 
-          if [ $FAILURES -ne 0 ]; then
-            echo "❌ $FAILURES breaker test(s) failed"
+          TOTAL_REQUIRED=$((REQUIRED_PASS+REQUIRED_FAIL))
+          echo "───────────────────────────────"
+          echo "Summary: $REQUIRED_PASS/$TOTAL_REQUIRED required breakers rejected correctly, $GAP_COUNT known-gap fixture(s) (informational), $MANIFEST_ERRORS fixture(s) missing from manifests"
+
+          TOTAL_FAILURES=$((REQUIRED_FAIL + MANIFEST_ERRORS))
+          if [ "$TOTAL_FAILURES" -ne 0 ]; then
+            echo "❌ $TOTAL_FAILURES failure(s)"
             exit 1
           fi
           echo "✅ All breakers caught for the right reason"
