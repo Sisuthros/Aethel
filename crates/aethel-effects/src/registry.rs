@@ -36,11 +36,7 @@ impl EffectRegistry {
         Self::default()
     }
 
-    pub fn register_builtin(
-        &mut self,
-        name: &str,
-        operations: &[BuiltinOperation<'_>],
-    ) {
+    pub fn register_builtin(&mut self, name: &str, operations: &[BuiltinOperation<'_>]) {
         let ops = operations
             .iter()
             .map(|(op_name, params, ret)| EffectOperation {

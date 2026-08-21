@@ -24,29 +24,51 @@ impl TypedExpr {
 /// Check if a value type can be assigned to a target type.
 pub fn check_assignable(value_ty: &IrType, target_ty: &IrType) -> Result<(), String> {
     match (value_ty, target_ty) {
-        (IrType::Unit { .. }, IrType::Unit { .. }) | (IrType::Bool { .. }, IrType::Bool { .. }) |
-        (IrType::Int { .. }, IrType::Int { .. }) | (IrType::Float { .. }, IrType::Float { .. }) |
-        (IrType::String { .. }, IrType::String { .. }) => Ok(()),
+        (IrType::Unit { .. }, IrType::Unit { .. })
+        | (IrType::Bool { .. }, IrType::Bool { .. })
+        | (IrType::Int { .. }, IrType::Int { .. })
+        | (IrType::Float { .. }, IrType::Float { .. })
+        | (IrType::String { .. }, IrType::String { .. }) => Ok(()),
         (IrType::Never { .. }, _) => Ok(()),
         (IrType::Path { path: p1, .. }, IrType::Path { path: p2, .. }) => {
             let n1 = p1.segments.last().map(|s| s.name.as_str()).unwrap_or("");
             let n2 = p2.segments.last().map(|s| s.name.as_str()).unwrap_or("");
-            if n1 == n2 { Ok(()) } else { Err(format!("expected `{n2}`, got `{n1}`")) }
+            if n1 == n2 {
+                Ok(())
+            } else {
+                Err(format!("expected `{n2}`, got `{n1}`"))
+            }
         }
         (IrType::Claim { ty: v, .. }, IrType::Claim { ty: t, .. }) => check_assignable(v, t),
-        (IrType::Claim { .. }, IrType::Verified { .. }) =>
-            Err("unverified claim cannot cross effect boundary".into()),
-        (IrType::Verified { ty: v, policy: vp, .. }, IrType::Verified { ty: t, policy: tp, .. }) => {
+        (IrType::Claim { .. }, IrType::Verified { .. }) => {
+            Err("unverified claim cannot cross effect boundary".into())
+        }
+        (
+            IrType::Verified {
+                ty: v, policy: vp, ..
+            },
+            IrType::Verified {
+                ty: t, policy: tp, ..
+            },
+        ) => {
             check_assignable(v, t)?;
             let vpn = match vp.as_ref() {
-                IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                IrType::Path { path, .. } => {
+                    path.segments.last().map(|s| s.name.as_str()).unwrap_or("")
+                }
                 _ => "",
             };
             let tpn = match tp.as_ref() {
-                IrType::Path { path, .. } => path.segments.last().map(|s| s.name.as_str()).unwrap_or(""),
+                IrType::Path { path, .. } => {
+                    path.segments.last().map(|s| s.name.as_str()).unwrap_or("")
+                }
                 _ => "",
             };
-            if vpn == tpn { Ok(()) } else { Err(format!("policy mismatch: `{vpn}` vs `{tpn}`")) }
+            if vpn == tpn {
+                Ok(())
+            } else {
+                Err(format!("policy mismatch: `{vpn}` vs `{tpn}`"))
+            }
         }
         _ => Err(format!("cannot assign: {}", type_to_string(value_ty))),
     }
@@ -55,8 +77,9 @@ pub fn check_assignable(value_ty: &IrType, target_ty: &IrType) -> Result<(), Str
 /// Check if an argument type matches an effect operation parameter type.
 pub fn check_effect_arg(arg_ty: &IrType, param_ty: &IrType) -> Result<(), String> {
     match (arg_ty, param_ty) {
-        (IrType::Claim { .. }, IrType::Verified { .. }) =>
-            Err("unverified claim cannot authorize effect".into()),
+        (IrType::Claim { .. }, IrType::Verified { .. }) => {
+            Err("unverified claim cannot authorize effect".into())
+        }
         _ => check_assignable(arg_ty, param_ty),
     }
 }
@@ -64,13 +87,26 @@ pub fn check_effect_arg(arg_ty: &IrType, param_ty: &IrType) -> Result<(), String
 /// Human-readable type name for error messages.
 pub fn type_to_string(ty: &IrType) -> String {
     match ty {
-        IrType::Unit { .. } => "()".into(), IrType::Never { .. } => "!".into(), IrType::Bool { .. } => "bool".into(),
-        IrType::Int { .. } => "int".into(), IrType::Float { .. } => "float".into(), IrType::String { .. } => "string".into(),
-        IrType::Path { path, .. } =>
-            path.segments.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join("::"),
+        IrType::Unit { .. } => "()".into(),
+        IrType::Never { .. } => "!".into(),
+        IrType::Bool { .. } => "bool".into(),
+        IrType::Int { .. } => "int".into(),
+        IrType::Float { .. } => "float".into(),
+        IrType::String { .. } => "string".into(),
+        IrType::Path { path, .. } => path
+            .segments
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join("::"),
         IrType::Claim { ty: inner, .. } => format!("Claim<{}>", type_to_string(inner)),
-        IrType::Verified { ty: inner, policy, .. } =>
-            format!("Verified<{}, {}>", type_to_string(inner), type_to_string(policy)),
+        IrType::Verified {
+            ty: inner, policy, ..
+        } => format!(
+            "Verified<{}, {}>",
+            type_to_string(inner),
+            type_to_string(policy)
+        ),
         _ => "?".into(),
     }
 }

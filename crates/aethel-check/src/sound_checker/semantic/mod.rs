@@ -76,27 +76,25 @@ impl SemanticChecker {
                     self.aliases.insert(def.name.clone(), lower_type(&def.ty));
                 }
                 hir::HirItem::Policy(def) => {
-                                    self.known_types.insert(def.name.clone());
-                                    self.policies.insert(
-                                        def.name.clone(),
-                                        def.claims
-                                            .iter()
-                                            .map(|claim| lower_type(&claim.ty))
-                                            .collect(),
-                                    );
-                                    // Track evidence kinds required by this policy's claims
-                                    let evidence_kinds: Vec<HirEvidenceKind> = def
-                                        .claims
-                                        .iter()
-                                        .flat_map(|claim| {
-                                            claim.evidence.iter().map(|ev| ev.kind.clone())
-                                        })
-                                        .collect();
-                                    if !evidence_kinds.is_empty() {
-                                        self.policy_evidence
-                                            .insert(def.name.clone(), evidence_kinds);
-                                    }
-                                }
+                    self.known_types.insert(def.name.clone());
+                    self.policies.insert(
+                        def.name.clone(),
+                        def.claims
+                            .iter()
+                            .map(|claim| lower_type(&claim.ty))
+                            .collect(),
+                    );
+                    // Track evidence kinds required by this policy's claims
+                    let evidence_kinds: Vec<HirEvidenceKind> = def
+                        .claims
+                        .iter()
+                        .flat_map(|claim| claim.evidence.iter().map(|ev| ev.kind.clone()))
+                        .collect();
+                    if !evidence_kinds.is_empty() {
+                        self.policy_evidence
+                            .insert(def.name.clone(), evidence_kinds);
+                    }
+                }
                 hir::HirItem::Effect(def) => {
                     self.effects.insert(
                         def.name.clone(),

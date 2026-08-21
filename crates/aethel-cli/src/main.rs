@@ -90,7 +90,8 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
     }
 
     // Phase 2: Type-check via HIR-based checker
-    let (ir_module, check_diagnostics) = aethel_check::checker::check_hir_module(&hir_module, file_id);
+    let (ir_module, check_diagnostics) =
+        aethel_check::checker::check_hir_module(&hir_module, file_id);
 
     if check_diagnostics.has_errors() {
         eprintln!("{}", "Type errors:".red().bold());
@@ -227,12 +228,12 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
                     }
                 }
                 functions_json.push(serde_json::json!({
-                                    "name": f.name.name,
-                                    "params": params,
-                                    "returns": f.ret_type.as_ref().map(ast_type_to_string),
-                                    "effects": effects,
-                                    "has_body": f.body.is_some()
-                                }));
+                    "name": f.name.name,
+                    "params": params,
+                    "returns": f.ret_type.as_ref().map(ast_type_to_string),
+                    "effects": effects,
+                    "has_body": f.body.is_some()
+                }));
             }
             _ => {}
         }

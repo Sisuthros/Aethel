@@ -66,26 +66,26 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_module(&mut self) -> Module {
-            let start_span = self.current_span();
-            let mut items = Vec::new();
+        let start_span = self.current_span();
+        let mut items = Vec::new();
 
-            while !self.is_at_end() {
-                if let Some(item) = self.parse_item() {
-                    items.push(item);
-                } else {
-                    // Error recovery: skip to next item
-                    self.skip_to_next_item();
-                }
-            }
-
-            let end_span = if self.current > 0 {
-                self.previous_span()
+        while !self.is_at_end() {
+            if let Some(item) = self.parse_item() {
+                items.push(item);
             } else {
-                start_span
-            };
-            let span = start_span.merge(end_span);
-            Module { span, items }
+                // Error recovery: skip to next item
+                self.skip_to_next_item();
+            }
         }
+
+        let end_span = if self.current > 0 {
+            self.previous_span()
+        } else {
+            start_span
+        };
+        let span = start_span.merge(end_span);
+        Module { span, items }
+    }
 
     fn parse_item(&mut self) -> Option<Item> {
         let start = self.current_span();
@@ -546,10 +546,7 @@ impl<'a> Parser<'a> {
     fn parse_evidence_kind(&mut self) -> Option<EvidenceKind> {
         // `evidence` keyword is required, then the evidence kind identifier
         if !self.eat(TokenKind::KwEvidence) {
-            self.error(
-                codes::PARSE_ERROR(),
-                "expected `evidence` keyword",
-            );
+            self.error(codes::PARSE_ERROR(), "expected `evidence` keyword");
             return None;
         }
         if let Some(ident) = self.parse_optional_ident() {
@@ -1688,23 +1685,32 @@ impl<'a> Parser<'a> {
 
     fn parse_verify_expr(&mut self, start: Span) -> Option<Expr> {
         self.expect(TokenKind::LParen, "expected `(` after `verify`")?;
-        
+
         // Handle empty args case explicitly to avoid backtracking
         if self.check(TokenKind::RParen) {
-            self.error(codes::PARSE_ERROR(), "verify expects 2 arguments (claim, policy), received 0");
+            self.error(
+                codes::PARSE_ERROR(),
+                "verify expects 2 arguments (claim, policy), received 0",
+            );
             self.eat(TokenKind::RParen);
             let end = self.previous_span();
             return Some(Expr::Verify {
                 span: start.merge(end),
-                claim: Box::new(Expr::Literal { span: start, lit: Literal::Unit { span: start } }),
+                claim: Box::new(Expr::Literal {
+                    span: start,
+                    lit: Literal::Unit { span: start },
+                }),
                 policy: TypePath::single(start, Ident::dummy("")),
             });
         }
-        
+
         let claim = self.parse_expr(Precedence::Lowest)?;
-        
+
         if self.check(TokenKind::RParen) {
-            self.error(codes::PARSE_ERROR(), "verify expects 2 arguments (claim, policy), received 1");
+            self.error(
+                codes::PARSE_ERROR(),
+                "verify expects 2 arguments (claim, policy), received 1",
+            );
             self.eat(TokenKind::RParen);
             let end = self.previous_span();
             return Some(Expr::Verify {
@@ -1713,11 +1719,14 @@ impl<'a> Parser<'a> {
                 policy: TypePath::single(start, Ident::dummy("")),
             });
         }
-        
+
         self.expect(TokenKind::Comma, "expected `,`")?;
-        
+
         if self.check(TokenKind::RParen) {
-            self.error(codes::PARSE_ERROR(), "verify expects 2 arguments (claim, policy), received 1");
+            self.error(
+                codes::PARSE_ERROR(),
+                "verify expects 2 arguments (claim, policy), received 1",
+            );
             self.eat(TokenKind::RParen);
             let end = self.previous_span();
             return Some(Expr::Verify {
@@ -1726,19 +1735,22 @@ impl<'a> Parser<'a> {
                 policy: TypePath::single(start, Ident::dummy("")),
             });
         }
-        
+
         let policy = self.parse_type_path()?;
-        
+
         // Check for extra arguments after policy
         while !self.check(TokenKind::RParen) && !self.is_at_end() {
-            self.error(codes::PARSE_ERROR(), "verify expects exactly 2 arguments, found extra argument");
+            self.error(
+                codes::PARSE_ERROR(),
+                "verify expects exactly 2 arguments, found extra argument",
+            );
             self.eat(TokenKind::Comma); // consume comma if present
             self.parse_expr(Precedence::Lowest)?; // consume extra arg
             if !self.eat(TokenKind::Comma) {
                 break;
             }
         }
-        
+
         self.expect(TokenKind::RParen, "expected `)`")?;
         let end = self.previous_span();
 
