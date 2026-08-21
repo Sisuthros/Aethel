@@ -25,7 +25,7 @@ policy OrderPolicy {
 
     let file_id = aethel_syntax::span::FileId::new(0);
     let tokens = aethel_syntax::lexer::lex(source, file_id);
-    let (module, diagnostics) = aethel_syntax::parser::parse(&tokens, file_id);
+    let (module, _diagnostics) = aethel_syntax::parser::parse(&tokens, file_id);
     let (_ir, check_diagnostics) = aethel_check::checker::check_module(&module, file_id);
 
     // Should fail because policy requires HumanReview evidence but verify provides none
