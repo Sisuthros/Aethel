@@ -3,7 +3,7 @@
 set -e
 PASS=0
 FAIL=0
-cd "."
+cd "$(dirname "$0")/.."
 
 echo "=== Aethel Adversarial Test Suite ==="
 echo ""
