@@ -647,7 +647,7 @@ impl<'a> Parser<'a> {
             if self.eat(TokenKind::Colon) {
                 // colon consumed
             }
-            if self.eat(TokenKind::LBrace) {
+            if self.check(TokenKind::LBrace) {
                 Some(self.parse_block()?)
             } else {
                 self.expect(
@@ -719,6 +719,11 @@ impl<'a> Parser<'a> {
     // Statement parsing
     fn parse_block(&mut self) -> Option<Block> {
         let start = self.current_span();
+        // `parse_block` owns the opening brace. Every caller must leave it
+        // unconsumed: the block-statement and block-expression sites only
+        // `check` for `{`, so a lenient `eat` here would let the parser
+        // recurse without consuming a token and overflow the stack.
+        self.expect(TokenKind::LBrace, "expected `{`")?;
         let mut stmts = Vec::new();
         let mut tail = None;
 
