@@ -1,3 +1,4 @@
 fixture	reason
 breaker-009-evidence-mismatch.aet	policy evidence requires surface syntax support for verify(claim, Policy, evidence)
 breaker-016-unused-claim.aet	linear Claim consumption not yet guaranteed
+breaker-021-origin-uninitialised.aet	uninitialised Verified binding is a second constructor (origin hole)

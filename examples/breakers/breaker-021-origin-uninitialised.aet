@@ -1,0 +1,35 @@
+// BREAKER 021 — Origin hole: an uninitialised `Verified` binding reaches an
+// effect boundary without ever passing through `verify`.
+//
+// docs/guarantees.md G5 states that `Verified<T, Policy>` can only be
+// constructed via `verify(claim, policy)`. A type annotation without an
+// initialiser is a second constructor, and the checker does not object.
+//
+// Expected (not yet implemented): AE-EPISTEMIC-001
+// Actual today: the checker accepts this file and exits 0.
+//
+// Control, held in this same directory: breaker-001-tyyppivaarennos.aet is the
+// identical shape with `Claim<D>` instead of `Verified<D, DPolicy>` and is
+// rejected with AE-EPISTEMIC-001. The difference is origin, not placement.
+//
+// The symbolic interpreter DOES stop it — `aethel-cli run` on this file reports
+// "unverified effect `do_it` blocked at runtime". The gap is compile-time only.
+// That is why this sits in known-gaps.tsv rather than required.tsv: it is a
+// named, reproducible hole, not a passing test.
+
+struct D { v: int }
+
+fn origin_hole() -> int
+uses Single:
+    {
+        let v: Verified<D, DPolicy>;
+        return single.do_it(v);
+    }
+
+effect Single {
+    fn do_it(d: Verified<D, DPolicy>) -> int
+}
+
+policy DPolicy {
+    D: D { evidence SignedAttestation "test" }
+}
