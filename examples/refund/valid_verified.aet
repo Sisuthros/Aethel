@@ -3,7 +3,7 @@
 
 fn refund_valid(claim: Claim<RefundDecision>) -> Receipt
 uses PaymentGateway:
-    { let verified = verify(claim, RefundPolicy); return payments.refund(verified); }
+    { let verified = verify(claim, RefundPolicy); return payment_gateway.refund(verified); }
 
 policy RefundPolicy {
     RefundDecision: RefundDecision {

@@ -20,15 +20,30 @@ pub enum TypeSymbol {
     Enum(HirEnumDef),
     TypeAlias(HirTypeAlias),
     Policy(HirPolicyDef),
-    Generic { name: String, bounds: Vec<HirTypeBound> },
+    Generic {
+        name: String,
+        bounds: Vec<HirTypeBound>,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum ValueSymbol {
     Fn(HirFnDef),
-    Const { name: String, ty: HirType, init: Option<HirExpr> },
-    Let { name: String, ty: Option<HirType>, is_mut: bool },
-    Param { name: String, ty: HirType, is_mut: bool },
+    Const {
+        name: String,
+        ty: HirType,
+        init: Option<HirExpr>,
+    },
+    Let {
+        name: String,
+        ty: Option<HirType>,
+        is_mut: bool,
+    },
+    Param {
+        name: String,
+        ty: HirType,
+        is_mut: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -68,17 +83,60 @@ impl SymbolTable {
 
     fn add_prelude(&mut self) {
         // Add built-in types
-        self.types.insert("bool".into(), TypeSymbol::Generic { name: "bool".into(), bounds: Vec::new() });
-        self.types.insert("int".into(), TypeSymbol::Generic { name: "int".into(), bounds: Vec::new() });
-        self.types.insert("float".into(), TypeSymbol::Generic { name: "float".into(), bounds: Vec::new() });
-        self.types.insert("string".into(), TypeSymbol::Generic { name: "string".into(), bounds: Vec::new() });
-        self.types.insert("Claim".into(), TypeSymbol::Generic { name: "Claim".into(), bounds: Vec::new() });
-        self.types.insert("Verified".into(), TypeSymbol::Generic { name: "Verified".into(), bounds: Vec::new() });
+        self.types.insert(
+            "bool".into(),
+            TypeSymbol::Generic {
+                name: "bool".into(),
+                bounds: Vec::new(),
+            },
+        );
+        self.types.insert(
+            "int".into(),
+            TypeSymbol::Generic {
+                name: "int".into(),
+                bounds: Vec::new(),
+            },
+        );
+        self.types.insert(
+            "float".into(),
+            TypeSymbol::Generic {
+                name: "float".into(),
+                bounds: Vec::new(),
+            },
+        );
+        self.types.insert(
+            "string".into(),
+            TypeSymbol::Generic {
+                name: "string".into(),
+                bounds: Vec::new(),
+            },
+        );
+        self.types.insert(
+            "Claim".into(),
+            TypeSymbol::Generic {
+                name: "Claim".into(),
+                bounds: Vec::new(),
+            },
+        );
+        self.types.insert(
+            "Verified".into(),
+            TypeSymbol::Generic {
+                name: "Verified".into(),
+                bounds: Vec::new(),
+            },
+        );
     }
 
     pub fn enter_scope(&mut self) {
-        let parent = if self.scopes.is_empty() { None } else { Some(self.scopes.len() - 1) };
-        self.scopes.push(Scope { parent, ..Default::default() });
+        let parent = if self.scopes.is_empty() {
+            None
+        } else {
+            Some(self.scopes.len() - 1)
+        };
+        self.scopes.push(Scope {
+            parent,
+            ..Default::default()
+        });
     }
 
     pub fn exit_scope(&mut self) {
@@ -151,7 +209,7 @@ pub fn resolve_module(module: &mut HirModule) -> Vec<String> {
     errors
 }
 
-fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String>) {
+fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut [String]) {
     match item {
         HirItem::Fn(f) => {
             table.add_value(f.name.clone(), ValueSymbol::Fn(f.clone()));
@@ -170,10 +228,13 @@ fn collect_item(table: &mut SymbolTable, item: &HirItem, errors: &mut Vec<String
         }
         HirItem::Effect(e) => {
             // Effects are registered for boundary checks (simplified for v0.1)
-            table.add_effect(e.name.clone(), EffectSymbol {
-                name: e.name.clone(),
-                operations: vec![], // populated in full lowering
-            });
+            table.add_effect(
+                e.name.clone(),
+                EffectSymbol {
+                    name: e.name.clone(),
+                    operations: vec![], // populated in full lowering
+                },
+            );
         }
         HirItem::Use(u) => {
             // Use declarations don't add to symbol table directly
@@ -213,11 +274,14 @@ fn resolve_item(table: &mut SymbolTable, item: &mut HirItem, errors: &mut Vec<St
 fn resolve_fn(table: &mut SymbolTable, f: &mut HirFnDef, errors: &mut Vec<String>) {
     table.enter_scope();
     for param in &f.params {
-        table.add_value(param.name.clone(), ValueSymbol::Param {
-            name: param.name.clone(),
-            ty: param.ty.clone(),
-            is_mut: param.is_mut,
-        });
+        table.add_value(
+            param.name.clone(),
+            ValueSymbol::Param {
+                name: param.name.clone(),
+                ty: param.ty.clone(),
+                is_mut: param.is_mut,
+            },
+        );
     }
     if let Some(body) = &mut f.body {
         resolve_block(table, body, errors);
@@ -228,10 +292,13 @@ fn resolve_fn(table: &mut SymbolTable, f: &mut HirFnDef, errors: &mut Vec<String
 fn resolve_struct(table: &mut SymbolTable, s: &mut HirStructDef, errors: &mut Vec<String>) {
     table.enter_scope();
     for param in &s.generics {
-        table.add_type(param.name.clone(), TypeSymbol::Generic {
-            name: param.name.clone(),
-            bounds: param.bounds.clone(),
-        });
+        table.add_type(
+            param.name.clone(),
+            TypeSymbol::Generic {
+                name: param.name.clone(),
+                bounds: param.bounds.clone(),
+            },
+        );
     }
     for field in &mut s.fields {
         resolve_type(table, &mut field.ty, errors);
@@ -242,10 +309,13 @@ fn resolve_struct(table: &mut SymbolTable, s: &mut HirStructDef, errors: &mut Ve
 fn resolve_enum(table: &mut SymbolTable, e: &mut HirEnumDef, errors: &mut Vec<String>) {
     table.enter_scope();
     for param in &e.generics {
-        table.add_type(param.name.clone(), TypeSymbol::Generic {
-            name: param.name.clone(),
-            bounds: param.bounds.clone(),
-        });
+        table.add_type(
+            param.name.clone(),
+            TypeSymbol::Generic {
+                name: param.name.clone(),
+                bounds: param.bounds.clone(),
+            },
+        );
     }
     for variant in &mut e.variants {
         for field in &mut variant.fields {
@@ -261,10 +331,13 @@ fn resolve_enum(table: &mut SymbolTable, e: &mut HirEnumDef, errors: &mut Vec<St
 fn resolve_type_alias(table: &mut SymbolTable, t: &mut HirTypeAlias, errors: &mut Vec<String>) {
     table.enter_scope();
     for param in &t.generics {
-        table.add_type(param.name.clone(), TypeSymbol::Generic {
-            name: param.name.clone(),
-            bounds: param.bounds.clone(),
-        });
+        table.add_type(
+            param.name.clone(),
+            TypeSymbol::Generic {
+                name: param.name.clone(),
+                bounds: param.bounds.clone(),
+            },
+        );
     }
     resolve_type(table, &mut t.ty, errors);
     table.exit_scope();
@@ -273,10 +346,13 @@ fn resolve_type_alias(table: &mut SymbolTable, t: &mut HirTypeAlias, errors: &mu
 fn resolve_policy(table: &mut SymbolTable, p: &mut HirPolicyDef, errors: &mut Vec<String>) {
     table.enter_scope();
     for param in &p.generics {
-        table.add_type(param.name.clone(), TypeSymbol::Generic {
-            name: param.name.clone(),
-            bounds: param.bounds.clone(),
-        });
+        table.add_type(
+            param.name.clone(),
+            TypeSymbol::Generic {
+                name: param.name.clone(),
+                bounds: param.bounds.clone(),
+            },
+        );
     }
     for claim in &mut p.claims {
         resolve_type(table, &mut claim.ty, errors);
@@ -300,18 +376,27 @@ fn resolve_block(table: &mut SymbolTable, block: &mut HirBlock, errors: &mut Vec
 
 fn resolve_stmt(table: &mut SymbolTable, stmt: &mut HirStmt, errors: &mut Vec<String>) {
     match stmt {
-        HirStmt::Let { name, ty, init, is_mut, .. } => {
+        HirStmt::Let {
+            name,
+            ty,
+            init,
+            is_mut,
+            ..
+        } => {
             if let Some(ty) = ty {
                 resolve_type(table, ty, errors);
             }
             if let Some(init) = init {
                 resolve_expr(table, init, errors);
             }
-            table.add_value(name.clone(), ValueSymbol::Let {
-                name: name.clone(),
-                ty: ty.clone(),
-                is_mut: *is_mut,
-            });
+            table.add_value(
+                name.clone(),
+                ValueSymbol::Let {
+                    name: name.clone(),
+                    ty: ty.clone(),
+                    is_mut: *is_mut,
+                },
+            );
         }
         HirStmt::Expr { expr, .. } => {
             resolve_expr(table, expr, errors);
@@ -321,7 +406,12 @@ fn resolve_stmt(table: &mut SymbolTable, stmt: &mut HirStmt, errors: &mut Vec<St
                 resolve_expr(table, expr, errors);
             }
         }
-        HirStmt::If { cond, then_branch, else_branch, .. } => {
+        HirStmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
             resolve_expr(table, cond, errors);
             resolve_block(table, then_branch, errors);
             if let Some(else_branch) = else_branch {
@@ -332,12 +422,16 @@ fn resolve_stmt(table: &mut SymbolTable, stmt: &mut HirStmt, errors: &mut Vec<St
             resolve_expr(table, cond, errors);
             resolve_block(table, body, errors);
         }
-        HirStmt::For { pat, iter, body, .. } => {
+        HirStmt::For {
+            pat, iter, body, ..
+        } => {
             resolve_pat(table, pat, errors);
             resolve_expr(table, iter, errors);
             resolve_block(table, body, errors);
         }
-        HirStmt::Match { scrutinee, arms, .. } => {
+        HirStmt::Match {
+            scrutinee, arms, ..
+        } => {
             resolve_expr(table, scrutinee, errors);
             for arm in arms {
                 resolve_pat(table, &mut arm.pat, errors);
@@ -369,7 +463,9 @@ fn resolve_expr(table: &mut SymbolTable, expr: &mut HirExpr, errors: &mut Vec<St
                 resolve_expr(table, e, errors);
             }
         }
-        HirExpr::Struct { path, fields, base, .. } => {
+        HirExpr::Struct {
+            path, fields, base, ..
+        } => {
             resolve_type_path(table, path, errors);
             for f in fields {
                 resolve_expr(table, &mut f.expr, errors);
@@ -404,14 +500,21 @@ fn resolve_expr(table: &mut SymbolTable, expr: &mut HirExpr, errors: &mut Vec<St
             resolve_expr(table, left, errors);
             resolve_expr(table, right, errors);
         }
-        HirExpr::If { cond, then_branch, else_branch, .. } => {
+        HirExpr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
             resolve_expr(table, cond, errors);
             resolve_expr(table, then_branch, errors);
             if let Some(else_branch) = else_branch {
                 resolve_expr(table, else_branch, errors);
             }
         }
-        HirExpr::Match { scrutinee, arms, .. } => {
+        HirExpr::Match {
+            scrutinee, arms, ..
+        } => {
             resolve_expr(table, scrutinee, errors);
             for arm in arms {
                 resolve_pat(table, &mut arm.pat, errors);
@@ -441,19 +544,24 @@ fn resolve_expr(table: &mut SymbolTable, expr: &mut HirExpr, errors: &mut Vec<St
                 resolve_expr(table, expr, errors);
             }
         }
-        HirExpr::Ask { model, input, output_ty, .. } => {
+        HirExpr::Ask {
+            model,
+            input,
+            output_ty,
+            ..
+        } => {
             resolve_expr_path(table, model, errors);
             resolve_expr(table, input, errors);
             resolve_type(table, output_ty, errors);
         }
         HirExpr::Verify { claim, policy, .. } => {
-                    resolve_expr(table, claim, errors);
-                    resolve_type_path(table, policy, errors);
-                }
-                HirExpr::Reason { prompt, .. } => {
-                    // Reason is an AI primitive that generates a Claim<T> - no resolution needed for prompt
-                }
-                HirExpr::CommitOnce { effect, args, .. } => {
+            resolve_expr(table, claim, errors);
+            resolve_type_path(table, policy, errors);
+        }
+        HirExpr::Reason { prompt, .. } => {
+            // Reason is an AI primitive that generates a Claim<T> - no resolution needed for prompt
+        }
+        HirExpr::CommitOnce { effect, args, .. } => {
             resolve_effect_ref(table, effect, errors);
             for arg in args {
                 resolve_expr(table, arg, errors);
@@ -472,11 +580,14 @@ fn resolve_expr(table: &mut SymbolTable, expr: &mut HirExpr, errors: &mut Vec<St
 fn resolve_pat(table: &mut SymbolTable, pat: &mut HirPat, errors: &mut Vec<String>) {
     match pat {
         HirPat::Ident { name, is_mut, .. } => {
-            table.add_value(name.clone(), ValueSymbol::Let {
-                name: name.clone(),
-                ty: None,
-                is_mut: *is_mut,
-            });
+            table.add_value(
+                name.clone(),
+                ValueSymbol::Let {
+                    name: name.clone(),
+                    ty: None,
+                    is_mut: *is_mut,
+                },
+            );
         }
         HirPat::Tuple { pats, .. } => {
             for p in pats {
@@ -529,7 +640,12 @@ fn resolve_type(table: &mut SymbolTable, ty: &mut HirType, errors: &mut Vec<Stri
                 resolve_type(table, t, errors);
             }
         }
-        HirType::Fn { params, ret, effects, .. } => {
+        HirType::Fn {
+            params,
+            ret,
+            effects,
+            ..
+        } => {
             for p in params {
                 resolve_type(table, p, errors);
             }
@@ -569,11 +685,19 @@ fn resolve_expr_path(table: &mut SymbolTable, path: &mut HirExprPath, errors: &m
     }
 }
 
-fn resolve_effect_ref(table: &mut SymbolTable, effect: &mut HirEffectRef, errors: &mut Vec<String>) {
+fn resolve_effect_ref(
+    table: &mut SymbolTable,
+    effect: &mut HirEffectRef,
+    errors: &mut Vec<String>,
+) {
     resolve_type_path(table, &mut effect.path, errors);
 }
 
-fn resolve_effect_set(table: &mut SymbolTable, effects: &mut HirEffectSet, errors: &mut Vec<String>) {
+fn resolve_effect_set(
+    table: &mut SymbolTable,
+    effects: &mut HirEffectSet,
+    errors: &mut Vec<String>,
+) {
     for effect in &mut effects.effects {
         resolve_effect_ref(table, effect, errors);
     }

@@ -1,0 +1,24 @@
+// BREAKER 012 — Nested verify: verify(verify(claim, Policy1), Policy2)
+// verify returns Verified, and verify expects Claim as first arg
+// Expected: AE-EPISTEMIC-001 (cannot verify a Verified)
+
+struct Data { value: int }
+
+fn double_verify(c: Claim<Data>) -> Verified<Data, PolicyB>
+uses Test:
+    {
+        let v = verify(verify(c, PolicyA), PolicyB);
+        return test.run(v);
+    }
+
+effect Test {
+    fn run(data: Verified<Data, PolicyB>) -> int
+}
+
+policy PolicyA {
+    Data: Data { evidence SignedAttestation "a" }
+}
+
+policy PolicyB {
+    Data: Data { evidence SignedAttestation "b" }
+}

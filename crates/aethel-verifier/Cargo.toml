@@ -1,0 +1,31 @@
+[package]
+name = "aethel-verifier"
+version = "0.1.0"
+edition = "2021"
+description = "Aethel Verifier - Claim/Verified type validation and policy checking"
+license = "MIT OR Apache-2.0"
+authors = ["Aethel Contributors"]
+repository = "https://github.com/Sisuthros/Aethel"
+readme = "README.md"
+keywords = ["verifier", "claim", "verified", "policy", "aethel"]
+categories = ["development-tools", "programming-languages"]
+
+[dependencies]
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+aethel-policy-engine = { path = "../aethel-policy-engine" }
+tokio = { workspace = true, features = ["full"] }
+async-trait = "0.1"
+tracing = { workspace = true, features = ["log"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+insta = { workspace = true, features = ["json"] }
+tempfile = "3.8"
+anyhow = { workspace = true }
+
+[lib]
+name = "aethel_verifier"
+path = "src/lib.rs"

@@ -1,5 +1,6 @@
 //! Aethel CLI - Command line interface for Aethel compiler.
 
+use aethel_check::checker;
 use aethel_syntax::{lexer::lex, parser::parse, span::FileId};
 use clap::{Parser, Subcommand};
 use colored::*;
@@ -96,19 +97,32 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
         for diag in check_diagnostics.errors() {
             eprintln!("  {} at {}", diag.code.to_string().red(), diag.message);
             for label in &diag.labels {
-                eprintln!("    --> {}.{}:{}", file.display(), label.span.start.0, label.span.end.0);
+                eprintln!(
+                    "    --> {}.{}:{}",
+                    file.display(),
+                    label.span.start.0,
+                    label.span.end.0
+                );
             }
         }
         std::process::exit(1);
     }
 
     if check_diagnostics.warnings().is_empty() {
-        println!("{} {}", "✓".green(), format!("{} type checks", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} type checks", file.display()).green()
+        );
     } else {
         for warn in check_diagnostics.warnings() {
             eprintln!("{} {}", "warning:".yellow(), warn.message);
         }
-        println!("{} {}", "✓".green(), format!("{} type checks (with warnings)", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} type checks (with warnings)", file.display()).green()
+        );
     }
 
     Ok((ir_module, file_id))
@@ -134,7 +148,7 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    let (_ir_module, check_diagnostics) = aethel_check::checker::check_module(&module, file_id);
+    let (_ir_module, check_diagnostics) = checker::check_module(&module, file_id);
 
     if check_diagnostics.has_errors() {
         eprintln!("{}", "Type errors:".red().bold());
@@ -163,7 +177,7 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
                     ops.push(serde_json::json!({
                         "name": op.name.name,
                         "params": params,
-                        "returns": op.ret_type.as_ref().map(|t| ast_type_to_string(t))
+                        "returns": op.ret_type.as_ref().map(ast_type_to_string),
                     }));
                 }
                 effects_json.push(serde_json::json!({
@@ -213,22 +227,42 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
                     }
                 }
                 functions_json.push(serde_json::json!({
-                    "name": f.name.name,
-                    "params": params,
-                    "returns": f.ret_type.as_ref().map(|t| ast_type_to_string(t)),
-                    "effects": effects,
-                    "has_body": f.body.is_some()
-                }));
+                                    "name": f.name.name,
+                                    "params": params,
+                                    "returns": f.ret_type.as_ref().map(ast_type_to_string),
+                                    "effects": effects,
+                                    "has_body": f.body.is_some()
+                                }));
             }
             _ => {}
         }
     }
 
     // Sort deterministically by name for stable output
-    effects_json.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    policies_json.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    structs_json.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
-    functions_json.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
+    effects_json.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    policies_json.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    structs_json.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    functions_json.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
 
     let output = serde_json::json!({
         "ir_version": "0.1",
@@ -263,7 +297,11 @@ fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
     if result.policy_violations.is_empty() {
         println!("  {} {}", "✓".green(), "No policy violations".green());
     } else {
-        println!("  {} {} policy violation(s):", "✗".red().bold(), result.policy_violations.len());
+        println!(
+            "  {} {} policy violation(s):",
+            "✗".red().bold(),
+            result.policy_violations.len()
+        );
         for v in &result.policy_violations {
             println!("    • {}", v.red());
         }
@@ -274,7 +312,11 @@ fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
         println!();
         println!("{}", "── Effect Trace ──".bold());
         for (i, trace) in result.effect_trace.iter().enumerate() {
-            let status = if trace.was_verified { "✓".green() } else { "✗".red() };
+            let status = if trace.was_verified {
+                "✓".green()
+            } else {
+                "✗".red()
+            };
             println!("  {}. {} effect `{}`", i + 1, status, trace.effect_name);
             if let Some(err) = &trace.error {
                 println!("     {}", err.yellow());
@@ -303,14 +345,38 @@ fn ast_type_to_string(ty: &aethel_syntax::ast::Type) -> String {
         Type::Int { .. } => "int".into(),
         Type::Float { .. } => "float".into(),
         Type::String { .. } => "string".into(),
-        Type::Path { path, .. } => path.segments.iter().map(|s| s.name.name.clone()).collect::<Vec<_>>().join("::"),
+        Type::Path { path, .. } => path
+            .segments
+            .iter()
+            .map(|s| s.name.name.clone())
+            .collect::<Vec<_>>()
+            .join("::"),
         Type::Claim { ty, .. } => format!("Claim<{}>", ast_type_to_string(ty)),
-        Type::Verified { ty, policy, .. } => format!("Verified<{}, {}>", ast_type_to_string(ty), ast_type_to_string(policy)),
+        Type::Verified { ty, policy, .. } => format!(
+            "Verified<{}, {}>",
+            ast_type_to_string(ty),
+            ast_type_to_string(policy)
+        ),
         Type::Ref { ty, .. } => format!("&{}", ast_type_to_string(ty)),
         Type::Owned { ty, .. } => format!("owned {}", ast_type_to_string(ty)),
-        Type::Tuple { types, .. } => format!("({})", types.iter().map(ast_type_to_string).collect::<Vec<_>>().join(", ")),
+        Type::Tuple { types, .. } => format!(
+            "({})",
+            types
+                .iter()
+                .map(ast_type_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Type::Array { ty, .. } => format!("[{}]", ast_type_to_string(ty)),
-        Type::Fn { params, ret, .. } => format!("fn({}) -> {}", params.iter().map(ast_type_to_string).collect::<Vec<_>>().join(", "), ast_type_to_string(ret)),
+        Type::Fn { params, ret, .. } => format!(
+            "fn({}) -> {}",
+            params
+                .iter()
+                .map(ast_type_to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            ast_type_to_string(ret)
+        ),
     }
 }
 
@@ -326,9 +392,17 @@ fn fmt_file(file: &PathBuf, check: bool) -> anyhow::Result<()> {
     }
 
     if check {
-        println!("{} {}", "✓".green(), format!("{} is formatted", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} is formatted", file.display()).green()
+        );
     } else {
-        println!("{} {}", "✓".green(), format!("{} formatted", file.display()).green());
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("{} formatted", file.display()).green()
+        );
     }
 
     Ok(())

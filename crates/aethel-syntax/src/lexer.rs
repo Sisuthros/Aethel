@@ -1,7 +1,7 @@
 //! Lexer for Aethel source code.
 
-use logos::Logos;
 use crate::span::{ByteOffset, FileId, Span};
+use logos::Logos;
 
 /// Token kinds for the Aethel lexer.
 #[derive(Logos, Debug, Clone, PartialEq)]
@@ -153,25 +153,25 @@ pub enum TokenKind {
     #[token("!")]
     Bang,
     #[token("&")]
-        And,
-        #[token("&&")]
-        AndAnd,
-        #[token("&=")]
-        AndEq,
-        #[token("|=")]
-        PipeEq,
-        #[token("||")]
-        OrOr,
-        #[token("||=")]
-        OrEq,
-        #[token("^")]
-        Xor,
-        #[token("^=")]
-        XorEq,
-        #[token("<<")]
-        Shl,
-        #[token("<<=")]
-        ShlEq,
+    And,
+    #[token("&&")]
+    AndAnd,
+    #[token("&=")]
+    AndEq,
+    #[token("|=")]
+    PipeEq,
+    #[token("||")]
+    OrOr,
+    #[token("||=")]
+    OrEq,
+    #[token("^")]
+    Xor,
+    #[token("^=")]
+    XorEq,
+    #[token("<<")]
+    Shl,
+    #[token("<<=")]
+    ShlEq,
     #[token(">>")]
     Shr,
     #[token(">>=")]
@@ -274,7 +274,7 @@ impl TokenKind {
             TokenKind::Question => "?",
         }
     }
-    
+
     /// Check if this token kind is an identifier
     pub fn is_ident(&self) -> bool {
         matches!(self, TokenKind::Ident(_))
@@ -346,7 +346,7 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Int(42))));
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - 3.14).abs() < 0.01)));
+            .any(|t| matches!(t.kind, TokenKind::Float(f) if (f - std::f64::consts::PI).abs() < 0.01)));
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::Bool(true))));
@@ -356,10 +356,10 @@ mod tests {
     }
 
     #[test]
-        fn test_lex_operators() {
-            let source =
+    fn test_lex_operators() {
+        let source =
                 "= : :: ; , . -> => | ( ) { } [ ] < > <= >= == != + - * / % ! && || .. ... @ ? & %= += -= *= /= |= ^= <<= >>= &&= ||=";
-            let tokens = lex(source, FileId::new(0));
-            assert_eq!(tokens.len(), 46);
-        }
+        let tokens = lex(source, FileId::new(0));
+        assert_eq!(tokens.len(), 46);
     }
+}

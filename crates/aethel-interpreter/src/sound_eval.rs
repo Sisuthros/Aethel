@@ -114,7 +114,11 @@ impl Env {
     pub fn snapshot(&self) -> HashMap<String, Value> {
         let mut result = HashMap::new();
         for scope in &self.scopes {
-            result.extend(scope.iter().map(|(name, value)| (name.clone(), value.clone())));
+            result.extend(
+                scope
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone())),
+            );
         }
         result
     }
@@ -294,7 +298,9 @@ impl Evaluator {
                 }
                 Ok(Flow::Continue(None))
             }
-            IrStmt::Match { scrutinee, arms, .. } => {
+            IrStmt::Match {
+                scrutinee, arms, ..
+            } => {
                 self.eval_expr(scrutinee)?;
                 if let Some(arm) = arms.first() {
                     let value = self.eval_expr(&arm.body)?;
@@ -312,9 +318,11 @@ impl Evaluator {
             IrExpr::Literal { lit, .. } => Ok(self.eval_literal(lit)),
             IrExpr::Path { path, .. } => {
                 let name = path_name(path);
-                Ok(self.env.get(&name).cloned().unwrap_or_else(|| {
-                    Value::Error(format!("unresolved runtime value `{name}`"))
-                }))
+                Ok(self
+                    .env
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Error(format!("unresolved runtime value `{name}`"))))
             }
             IrExpr::Call { args, .. } => {
                 for arg in args {
@@ -332,15 +340,22 @@ impl Evaluator {
                 ..
             } => self.eval_effect_call(*span, receiver, method, args),
             IrExpr::Field { base, field, .. } => match self.eval_expr(base)? {
-                Value::Struct { fields, .. } => Ok(fields.get(field).cloned().unwrap_or_else(|| {
-                    Value::Error(format!("missing field `{field}`"))
-                })),
-                _ => Ok(Value::Error(format!("field access `{field}` on non-struct"))),
+                Value::Struct { fields, .. } => Ok(fields
+                    .get(field)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Error(format!("missing field `{field}`")))),
+                _ => Ok(Value::Error(format!(
+                    "field access `{field}` on non-struct"
+                ))),
             },
             IrExpr::Index { base, index, .. } => {
                 let index = match self.eval_expr(index)? {
                     Value::Int(value) if value >= 0 => value as usize,
-                    _ => return Ok(Value::Error("array index must be a non-negative int".into())),
+                    _ => {
+                        return Ok(Value::Error(
+                            "array index must be a non-negative int".into(),
+                        ))
+                    }
                 };
                 match self.eval_expr(base)? {
                     Value::Array(values) | Value::Tuple(values) => Ok(values
@@ -382,11 +397,7 @@ impl Evaluator {
                     provenance: "ask".into(),
                 })
             }
-            IrExpr::CommitOnce {
-                span,
-                effect,
-                args,
-            } => {
+            IrExpr::CommitOnce { span, effect, args } => {
                 let name = type_path_name(&effect.path);
                 let value = args
                     .first()
@@ -495,12 +506,7 @@ impl Evaluator {
         }
     }
 
-    fn eval_verify(
-        &mut self,
-        span: Span,
-        claim: &IrExpr,
-        policy: &IrTypePath,
-    ) -> Result<Value> {
+    fn eval_verify(&mut self, span: Span, claim: &IrExpr, policy: &IrTypePath) -> Result<Value> {
         let value = self.eval_expr(claim)?;
         match value {
             Value::Claim { inner, provenance } => {
@@ -575,13 +581,9 @@ fn eval_binary(op: &IrBinaryOp, left: Value, right: Value) -> Value {
         (IrBinaryOp::Add, Value::Int(left), Value::Int(right)) => Value::Int(left + right),
         (IrBinaryOp::Sub, Value::Int(left), Value::Int(right)) => Value::Int(left - right),
         (IrBinaryOp::Mul, Value::Int(left), Value::Int(right)) => Value::Int(left * right),
-        (IrBinaryOp::Div, Value::Int(_), Value::Int(0)) => {
-            Value::Error("division by zero".into())
-        }
+        (IrBinaryOp::Div, Value::Int(_), Value::Int(0)) => Value::Error("division by zero".into()),
         (IrBinaryOp::Div, Value::Int(left), Value::Int(right)) => Value::Int(left / right),
-        (IrBinaryOp::Rem, Value::Int(_), Value::Int(0)) => {
-            Value::Error("remainder by zero".into())
-        }
+        (IrBinaryOp::Rem, Value::Int(_), Value::Int(0)) => Value::Error("remainder by zero".into()),
         (IrBinaryOp::Rem, Value::Int(left), Value::Int(right)) => Value::Int(left % right),
         (IrBinaryOp::Eq, left, right) => Value::Bool(left == right),
         (IrBinaryOp::Ne, left, right) => Value::Bool(left != right),

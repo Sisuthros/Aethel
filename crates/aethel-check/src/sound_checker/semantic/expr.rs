@@ -321,6 +321,13 @@ impl SemanticChecker {
                 return ir::IrType::Unit { span };
             }
         };
+        // Built-in functions: reason and ask
+        if name == "reason" {
+            return self.check_builtin_reason(span, args);
+        }
+        if name == "ask" {
+            return self.check_builtin_ask(span, args);
+        }
         let actual: Vec<_> = args.iter().map(|arg| self.check_expr(arg)).collect();
         if let Some(signature) = self.functions.get(&name).cloned() {
             self.check_args(
@@ -337,6 +344,52 @@ impl SemanticChecker {
                 span,
             );
             ir::IrType::Unit { span }
+        }
+    }
+
+    pub(super) fn check_builtin_reason(&mut self, span: Span, args: &[hir::HirExpr]) -> ir::IrType {
+        // reason(prompt: string) -> Claim<string>
+        if args.len() != 1 {
+            self.error(
+                codes::TYPE_MISMATCH(),
+                format!("reason expects 1 argument, received {}", args.len()),
+                span,
+            );
+            return ir::IrType::Unit { span };
+        }
+        let prompt_ty = self.check_expr(&args[0]);
+        self.require_assignable(
+            &prompt_ty,
+            &ir::IrType::String { span },
+            span,
+            "reason argument",
+        );
+        ir::IrType::Claim {
+            span,
+            ty: Box::new(ir::IrType::String { span }),
+        }
+    }
+
+    pub(super) fn check_builtin_ask(&mut self, span: Span, args: &[hir::HirExpr]) -> ir::IrType {
+        // ask(input, OutputType) or ask(model, input, OutputType) -> Claim<OutputType>
+        if args.len() < 2 || args.len() > 3 {
+            self.error(
+                codes::TYPE_MISMATCH(),
+                format!("ask expects 2 or 3 arguments, received {}", args.len()),
+                span,
+            );
+            return ir::IrType::Unit { span };
+        }
+        // Check all provided arguments
+        for arg in args {
+            self.check_expr(arg);
+        }
+        // The last argument is always the output type - extract from HIR
+        // The semantic type comes from the output_ty annotation
+        // Default to Claim<string> since we can't extract the type path from parsed call
+        ir::IrType::Claim {
+            span,
+            ty: Box::new(ir::IrType::String { span }),
         }
     }
 

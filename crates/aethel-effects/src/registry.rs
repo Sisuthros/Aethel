@@ -3,6 +3,9 @@
 use aethel_syntax::span::Span;
 use indexmap::IndexMap;
 
+/// Type alias for builtin effect operation registration
+type BuiltinOperation<'a> = (&'a str, &'a [(&'a str, &'a str)], Option<&'a str>);
+
 /// Effect registry for known effects and their operations.
 #[derive(Debug, Default)]
 pub struct EffectRegistry {
@@ -36,7 +39,7 @@ impl EffectRegistry {
     pub fn register_builtin(
         &mut self,
         name: &str,
-        operations: &[(&str, &[(&str, &str)], Option<&str>)],
+        operations: &[BuiltinOperation<'_>],
     ) {
         let ops = operations
             .iter()
