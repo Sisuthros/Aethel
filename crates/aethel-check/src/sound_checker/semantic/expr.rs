@@ -455,6 +455,13 @@ impl SemanticChecker {
         claim: &hir::HirExpr,
         policy: &hir::HirTypePath,
     ) -> ir::IrType {
+        // Linear consumption: verifying a Claim path consumes it.
+        if let hir::HirExpr::Path { path, .. } = claim {
+            let name = expr_path_name(path);
+            if self.linear_params.iter().any(|(n, _)| n == &name) {
+                self.linear_consumed.insert(name);
+            }
+        }
         let claim_ty = self.check_expr(claim);
         let inner = match claim_ty {
             ir::IrType::Claim { ty, .. } => *ty,

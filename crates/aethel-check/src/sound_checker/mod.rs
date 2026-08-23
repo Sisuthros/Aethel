@@ -82,4 +82,66 @@ mod tests {
             .iter()
             .any(|diag| diag.code == codes::EPISTEMIC_POLICY_MISMATCH()));
     }
+
+    #[test]
+    fn rejects_unconsumed_claim_parameter() {
+        // BREAKER 016 — a linear Claim parameter must be consumed via verify.
+        let diagnostics = check(
+            r#"
+            fn unused_claim(c: Claim<int>) -> int {
+                let x = 42;
+                return x;
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
+    }
+
+    #[test]
+    fn accepts_consumed_claim_parameter() {
+        // Control for breaker-016: verifying the claim consumes it, so the
+        // function must type check without AE-TYPE-013.
+        let diagnostics = check(
+            r#"
+            policy P { int: int { evidence SignedAttestation "ok" } }
+            fn used_claim(c: Claim<int>) -> Verified<int, P> {
+                return verify(c, P);
+            }
+            "#,
+        );
+        assert!(!diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
+    }
+
+    #[test]
+    fn rejects_uninitialised_verified_binding() {
+        // BREAKER 021 — origin enforcement: a bare declaration is not a
+        // constructor. Only `verify(claim, policy)` may produce Verified.
+        let diagnostics = check(
+            r#"
+            struct D { v: int }
+            fn origin_hole() -> int
+            uses Single:
+                {
+                    let v: Verified<D, DPolicy>;
+                    return single.do_it(v);
+                }
+            effect Single {
+                fn do_it(d: Verified<D, DPolicy>) -> int
+            }
+            policy DPolicy {
+                D: D { evidence SignedAttestation "test" }
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::EPISTEMIC_VERIFIED_REQUIRED()));
+    }
 }

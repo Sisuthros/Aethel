@@ -13,7 +13,9 @@ breaker-012-double-verify.aet	AE-EPISTEMIC-002
 breaker-013-struct-vs-int.aet	AE-TYPE-001
 breaker-014-wrong-effect-policy.aet	AE-EPISTEMIC-003
 breaker-015-claim-type-mismatch.aet	AE-TYPE-001
+breaker-016-unused-claim.aet	AE-TYPE-013
 breaker-017-verify-literal.aet	AE-EPISTEMIC-002
 breaker-018-no-policy-defined.aet	AE-NAME-002
 breaker-019-claim-wrong-arg.aet	AE-EPISTEMIC-001
 breaker-020-scope-escape.aet	AE-EPISTEMIC-001
+breaker-021-origin-uninitialised.aet	AE-EPISTEMIC-002

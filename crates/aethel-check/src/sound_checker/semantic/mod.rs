@@ -46,6 +46,10 @@ pub(super) struct SemanticChecker {
     scopes: Vec<HashMap<String, ir::IrType>>,
     current_return: Option<ir::IrType>,
     current_effects: Vec<String>,
+    /// Names of Claim-typed parameters in the current function that must be consumed.
+    linear_params: Vec<(String, Span)>,
+    /// Names of Claim-typed parameters already consumed via `verify` in the current function.
+    linear_consumed: HashSet<String>,
 }
 
 impl SemanticChecker {
@@ -292,6 +296,8 @@ impl SemanticChecker {
     pub(super) fn check_fn(&mut self, def: &hir::HirFnDef) {
         let old_return = self.current_return.clone();
         let old_effects = self.current_effects.clone();
+        let old_linear_params = std::mem::take(&mut self.linear_params);
+        let old_linear_consumed = std::mem::take(&mut self.linear_consumed);
         self.current_return = Some(
             def.ret_type
                 .as_ref()
@@ -304,6 +310,14 @@ impl SemanticChecker {
             .map(|effect| type_path_name(&effect.path))
             .collect();
 
+        // Linear types: Claim-typed parameters must be consumed via `verify`
+        // before the function body ends.
+        for param in &def.params {
+            if matches!(lower_type(&param.ty), ir::IrType::Claim { .. }) {
+                self.linear_params.push((param.name.clone(), param.span));
+            }
+        }
+
         self.push_scope();
         for param in &def.params {
             self.bind(param.name.clone(), lower_type(&param.ty), param.span);
@@ -315,6 +329,27 @@ impl SemanticChecker {
             }
         }
         self.pop_scope();
+
+        // Linear consumption check: every Claim-typed parameter must have been
+        // consumed by `verify` before the function body ends.
+        let unconsumed: Vec<(String, Span)> = self
+            .linear_params
+            .iter()
+            .filter(|(name, _)| !self.linear_consumed.contains(name))
+            .cloned()
+            .collect();
+        for (name, span) in unconsumed {
+            self.error(
+                codes::LINEAR_NOT_CONSUMED(),
+                format!(
+                    "claim parameter `{name}` is never verified — linear Claim values must be consumed with `verify`"
+                ),
+                span,
+            );
+        }
+
+        self.linear_params = old_linear_params;
+        self.linear_consumed = old_linear_consumed;
         self.current_return = old_return;
         self.current_effects = old_effects;
     }
@@ -345,7 +380,22 @@ impl SemanticChecker {
                         self.require_assignable(&actual, &expected, *span, "let binding");
                         expected
                     }
-                    (Some(expected), None) => expected,
+                    (Some(expected), None) => {
+                        // Origin enforcement (docs/guarantees.md G5): a bare
+                        // declaration is not a constructor. A `Verified<_, _>`
+                        // binding without an initialiser never passed through
+                        // `verify`, so it must not be treated as verified.
+                        if matches!(expected, ir::IrType::Verified { .. }) {
+                            self.error(
+                                codes::EPISTEMIC_VERIFIED_REQUIRED(),
+                                format!(
+                                    "binding `{name}` declares `Verified` without an initialiser — only `verify(claim, policy)` may produce a Verified value"
+                                ),
+                                *span,
+                            );
+                        }
+                        expected
+                    }
                     (None, Some(actual)) => actual,
                     (None, None) => {
                         self.error(

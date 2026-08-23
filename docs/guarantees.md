@@ -46,21 +46,21 @@ Cross-effect calls without declaration are rejected.
 
 Held by: `breaker-011-undeclared-effect.aet` (`AE-TYPE-018`).
 
-## G3: Capability Linearity — **Target**
+## G3: Capability Linearity — **Partial**
 **Linear capabilities cannot be duplicated or dropped.**
 
 The intent is that capability tokens (like `Budget`, `Context`) are
 affine/linear: used exactly once, with the type checker tracking consumption.
 
-What exists today is a "claim used at least once" lint, which is not a linear
-type. One claim, verified twice under two different policies and dispatched to
-two different effects, passes both gates. In a payments language that is a
-double charge.
+**Drop side enforced (2026-08-23):** a `Claim`-typed function parameter that is
+never consumed by `verify` before the body ends is rejected with
+`AE-TYPE-013`. Held by: `breaker-016-unused-claim.aet` (promoted from
+known-gaps to `required.tsv`).
 
-Open gap: `breaker-016-unused-claim.aet`, listed in `known-gaps.tsv` with the
-reason "linear Claim consumption not yet guaranteed". `examples/full_pipeline.aet`
-documents the current semantics in a comment: verification is semantic, not
-consumptive.
+What is still open is the duplication side: one claim verified twice under two
+different policies and dispatched to two different effects can still pass both
+gates (`AE-TYPE-012`, use-after-move, is not yet emitted). In a payments
+language that is a double charge.
 
 ## G4: Budget Reservation — **Target**
 **Model calls must reserve budget before dispatch.**
@@ -71,32 +71,21 @@ reserves tokens statically, making exhaustion a compile-time error.
 Budget tracking today is compile-time bookkeeping with no runtime enforcement.
 See `docs/non-guarantees.md` NG3, which is the accurate description.
 
-## G5: Verified Construction — **Partial**
+## G5: Verified Construction — **Enforced**
 **`Verified<T, Policy>` can only be constructed via `verify(claim, policy)`.**
 
 There is no public constructor for `Verified`. The `verify` expression is the
-intended way to produce it, and it type-checks that the policy exists and the
+only way to produce it, and it type-checks that the policy exists and the
 claim matches.
 
-**Not enforced today:** a type annotation without an initialiser is a second
-constructor, and the checker does not object.
+**Origin enforced (2026-08-23):** a type annotation without an initialiser is
+no longer a second constructor. A bare `let v: Verified<D, DPolicy>;`
+declaration is rejected with `AE-EPISTEMIC-002` — only a binding produced by
+`verify` may carry the `Verified` type.
 
-```
-let v: Verified<D, DPolicy>;
-return single.do_it(v);          // checker exits 0
-```
-
-The identical file with `Claim<D>` is rejected with `AE-EPISTEMIC-001`, so this
-is specifically an origin failure, not a placement failure. The symbolic
-interpreter does stop it — `aethel-cli run` reports "unverified effect `do_it`
-blocked at runtime" — so the program fails closed at runtime, but the
-compile-time guarantee this section promises is not yet delivered.
-
-Open gap: `breaker-021-origin-uninitialised.aet`, in `known-gaps.tsv` with the
-reason "uninitialised Verified binding is a second constructor (origin hole)".
-
-Origin tracking as a first-class analysis — which value came from a `verify`
-call and which did not — is the work that closes this.
+Held by: `breaker-021-origin-uninitialised.aet` (promoted from known-gaps to
+`required.tsv`, expected code `AE-EPISTEMIC-002`). The symbolic interpreter
+still blocks the same program at runtime as defence in depth.
 
 ## G6: Commit Once Semantics — **Enforced**
 **`commit_once` expressions are recorded in the event log before execution.**
