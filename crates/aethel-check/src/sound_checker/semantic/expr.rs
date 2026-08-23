@@ -457,11 +457,27 @@ impl SemanticChecker {
         policy: &hir::HirTypePath,
         evidence: Option<&hir::HirEvidenceKind>,
     ) -> ir::IrType {
-        // Linear consumption: verifying a Claim path consumes it.
+        // Linear consumption: verifying a Claim path consumes it. The path may
+        // name the parameter directly or an alias binding (`let x = c;`).
         if let hir::HirExpr::Path { path, .. } = claim {
-            let name = expr_path_name(path);
-            if self.linear_params.iter().any(|(n, _)| n == &name) {
-                self.linear_consumed.insert(name);
+            let mut name = expr_path_name(path);
+            if let Some(source) = self.linear_aliases.get(&name) {
+                name = source.clone();
+            }
+            if self.linear_params.iter().any(|(n, _)| *n == name) {
+                // Duplication guard: a second verify of the same linear Claim
+                // is a use-after-move (double charge under two policies).
+                if !self.linear_consumed.insert(name.clone()) {
+                    let span = expr_span(claim);
+                    self.error(
+                        codes::LINEAR_USE_AFTER_MOVE(),
+                        format!(
+                            "claim `{name}` is already consumed — a linear Claim can be verified only once"
+                        ),
+                        span,
+                    );
+                    return ir::IrType::Unit { span };
+                }
             }
         }
         let claim_ty = self.check_expr(claim);

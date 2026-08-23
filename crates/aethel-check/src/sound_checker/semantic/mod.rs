@@ -50,6 +50,9 @@ pub(super) struct SemanticChecker {
     linear_params: Vec<(String, Span)>,
     /// Names of Claim-typed parameters already consumed via `verify` in the current function.
     linear_consumed: HashSet<String>,
+    /// Bindings that alias a linear Claim parameter (`let x = c;` maps x → c),
+    /// so consumption through the alias reaches the parameter's account.
+    linear_aliases: HashMap<String, String>,
 }
 
 impl SemanticChecker {
@@ -298,6 +301,7 @@ impl SemanticChecker {
         let old_effects = self.current_effects.clone();
         let old_linear_params = std::mem::take(&mut self.linear_params);
         let old_linear_consumed = std::mem::take(&mut self.linear_consumed);
+        let old_linear_aliases = std::mem::take(&mut self.linear_aliases);
         self.current_return = Some(
             def.ret_type
                 .as_ref()
@@ -350,6 +354,7 @@ impl SemanticChecker {
 
         self.linear_params = old_linear_params;
         self.linear_consumed = old_linear_consumed;
+        self.linear_aliases = old_linear_aliases;
         self.current_return = old_return;
         self.current_effects = old_effects;
     }
@@ -406,6 +411,17 @@ impl SemanticChecker {
                         ir::IrType::Unit { span: *span }
                     }
                 };
+                // Linear bookkeeping: a bare `let x = c;` where `c` is a
+                // linear Claim parameter aliases it. Consumption through the
+                // alias must reach the parameter's account.
+                if let ir::IrType::Claim { .. } = &binding_ty {
+                    if let Some(hir::HirExpr::Path { path, .. }) = init.as_ref() {
+                        let source = expr_path_name(path);
+                        if self.linear_params.iter().any(|(n, _)| *n == source) {
+                            self.linear_aliases.insert(name.clone(), source);
+                        }
+                    }
+                }
                 self.bind(name.clone(), binding_ty, *span);
             }
             hir::HirStmt::Expr { expr, .. } => {

@@ -207,4 +207,51 @@ mod tests {
             .iter()
             .any(|diag| diag.code == codes::EPISTEMIC_VERIFY_FAILED()));
     }
+
+    #[test]
+    fn rejects_double_verification_of_same_claim() {
+        // BREAKER 016 follow-up — duplication side of linearity: verifying
+        // the same linear Claim twice (the double-charge shape) must be
+        // rejected with AE-TYPE-012.
+        let diagnostics = check(
+            r#"
+            policy P1 { int: int { evidence SignedAttestation "a" } }
+            policy P2 { int: int { evidence SignedAttestation "b" } }
+            effect A { fn run(d: Verified<int, P1>) -> int }
+            effect B { fn run(d: Verified<int, P2>) -> int }
+            fn f(c: Claim<int>) -> int
+            uses A, B:
+                {
+                    let va = verify(c, P1);
+                    let ra = a.run(va);
+                    let vb = verify(c, P2);
+                    let rb = b.run(vb);
+                    return ra + rb;
+                }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_USE_AFTER_MOVE()));
+    }
+
+    #[test]
+    fn consumption_through_alias_counts() {
+        // `let x = c; verify(x, P)` consumes c through the alias — no
+        // unconsumed-parameter error may fire.
+        let diagnostics = check(
+            r#"
+            policy P { int: int { evidence SignedAttestation "ok" } }
+            fn f(c: Claim<int>) -> Verified<int, P> {
+                let x = c;
+                return verify(x, P);
+            }
+            "#,
+        );
+        assert!(!diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
+    }
 }

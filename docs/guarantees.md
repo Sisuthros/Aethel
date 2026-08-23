@@ -53,7 +53,7 @@ Cross-effect calls without declaration are rejected.
 
 Held by: `breaker-011-undeclared-effect.aet` (`AE-TYPE-018`).
 
-## G3: Capability Linearity — **Partial**
+## G3: Capability Linearity — **Enforced**
 **Linear capabilities cannot be duplicated or dropped.**
 
 The intent is that capability tokens (like `Budget`, `Context`) are
@@ -61,13 +61,16 @@ affine/linear: used exactly once, with the type checker tracking consumption.
 
 **Drop side enforced (2026-08-23):** a `Claim`-typed function parameter that is
 never consumed by `verify` before the body ends is rejected with
-`AE-TYPE-013`. Held by: `breaker-016-unused-claim.aet` (promoted from
-known-gaps to `required.tsv`).
+`AE-TYPE-013`. Held by: `breaker-016-unused-claim.aet`.
 
-What is still open is the duplication side: one claim verified twice under two
-different policies and dispatched to two different effects can still pass both
-gates (`AE-TYPE-012`, use-after-move, is not yet emitted). In a payments
-language that is a double charge.
+**Duplication side enforced (2026-08-23):** verifying the same linear Claim
+twice — including under two different policies, the double-charge shape — is
+rejected with `AE-TYPE-012`. Consumption through an alias binding
+(`let x = c; verify(x, P)`) is accounted to the parameter.
+
+Held by: unit tests `rejects_double_verification_of_same_claim`,
+`consumption_through_alias_counts`, `rejects_unconsumed_claim_parameter`
+in `crates/aethel-check/src/sound_checker/mod.rs`.
 
 ## G4: Budget Reservation — **Target**
 **Model calls must reserve budget before dispatch.**
