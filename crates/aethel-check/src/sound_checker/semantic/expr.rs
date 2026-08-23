@@ -252,7 +252,8 @@ impl SemanticChecker {
                 span,
                 claim,
                 policy,
-            } => self.check_verify(*span, claim, policy),
+                evidence,
+            } => self.check_verify(*span, claim, policy, evidence.as_ref()),
             hir::HirExpr::Reason { span, .. } => ir::IrType::Claim {
                 span: *span,
                 ty: Box::new(ir::IrType::String { span: *span }),
@@ -454,6 +455,7 @@ impl SemanticChecker {
         span: Span,
         claim: &hir::HirExpr,
         policy: &hir::HirTypePath,
+        evidence: Option<&hir::HirEvidenceKind>,
     ) -> ir::IrType {
         // Linear consumption: verifying a Claim path consumes it.
         if let hir::HirExpr::Path { path, .. } = claim {
@@ -489,18 +491,38 @@ impl SemanticChecker {
                     span,
                 );
             }
-            // NEW: Check if policy requires evidence but verify() provides none
-            if let Some(required_evidence) = self.policy_evidence.get(&policy_name) {
-                if !required_evidence.is_empty() {
-                    self.error(
-                            codes::EPISTEMIC_VERIFY_FAILED(),
-                            format!(
-                                "verification failed: policy `{policy_name}` requires evidence {:?} for claim, but verify() provides none",
-                                required_evidence
-                            ),
-                            span,
-                        );
-                }
+            // Evidence-kind matching: the evidence `verify` provides must be
+            // one of the kinds the policy claim requires. No third argument
+            // means no evidence was provided.
+            match self.policy_evidence.get(&policy_name) {
+                Some(required_evidence) if !required_evidence.is_empty() => match evidence {
+                    None => {
+                        self.error(
+                                codes::EPISTEMIC_VERIFY_FAILED(),
+                                format!(
+                                    "verification failed: policy `{policy_name}` requires evidence {:?} for claim, but verify() provides none",
+                                    required_evidence
+                                ),
+                                span,
+                            );
+                    }
+                    Some(provided_kind) => {
+                        if !required_evidence
+                            .iter()
+                            .any(|required| hir_evidence_kinds_equal(required, provided_kind))
+                        {
+                            self.error(
+                                    codes::EPISTEMIC_POLICY_MISMATCH(),
+                                    format!(
+                                        "policy `{policy_name}` requires evidence kind(s) {:?}, but verify() provides {:?}",
+                                        required_evidence, provided_kind
+                                    ),
+                                    span,
+                                );
+                        }
+                    }
+                },
+                _ => {}
             }
         } else {
             self.error(
@@ -564,5 +586,18 @@ impl SemanticChecker {
                 left
             }
         }
+    }
+}
+
+/// Structural equality for evidence kinds, including `Custom` names.
+fn hir_evidence_kinds_equal(left: &hir::HirEvidenceKind, right: &hir::HirEvidenceKind) -> bool {
+    use hir::HirEvidenceKind as K;
+    match (left, right) {
+        (K::SignedAttestation, K::SignedAttestation)
+        | (K::CryptographicProof, K::CryptographicProof)
+        | (K::AuditLog, K::AuditLog)
+        | (K::HumanReview, K::HumanReview) => true,
+        (K::Custom(a), K::Custom(b)) => a == b,
+        _ => false,
     }
 }

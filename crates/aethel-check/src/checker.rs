@@ -88,6 +88,23 @@ pub enum EvidenceKind {
     Custom(String),
 }
 
+/// Structural equality between a registry evidence kind and a HIR-carried
+/// kind provided at a `verify(c, Policy, evidence Kind)` call site.
+pub fn evidence_kinds_equal(
+    left: &EvidenceKind,
+    right: &aethel_hir::lower::HirEvidenceKind,
+) -> bool {
+    use aethel_hir::lower::HirEvidenceKind as H;
+    match (left, right) {
+        (EvidenceKind::SignedAttestation, H::SignedAttestation)
+        | (EvidenceKind::CryptographicProof, H::CryptographicProof)
+        | (EvidenceKind::AuditLog, H::AuditLog)
+        | (EvidenceKind::HumanReview, H::HumanReview) => true,
+        (EvidenceKind::Custom(a), H::Custom(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// Policy registry for epistemic types.
 #[derive(Debug, Default)]
 pub struct PolicyRegistry {
@@ -1058,7 +1075,7 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                 output_ty: crate::types::lower_hir_type(&output_ty),
             })
         }
-        HirExpr::Verify { span, claim, policy } => {
+        HirExpr::Verify { span, claim, policy, evidence } => {
             // EPISTEMIC TYPE RULE: Claim<T> -> Verified<T, Policy>
             // This is where AE-EPISTEMIC-001 is enforced
             let claim_expr = check_expr(ctx, claim)?;
@@ -1066,10 +1083,8 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
 
             // Check if claim is Claim<T>
             if let aethel_ir::lower::IrType::Claim { ty: inner, .. } = &claim_ty {
-                // Evidence requirement check: a policy may declare that a Claim<T> can only be
-                // verified when specific evidence kinds are presented. Aethel's surface syntax does
-                // not yet allow passing evidence to `verify()`, so any non-empty evidence list on
-                // the matching policy claim makes verification impossible and is rejected here.
+                // Evidence-kind matching: the evidence `verify` provides must be
+                // one of the kinds the policy claim requires.
                 let policy_name = policy.segments.first().map(|s| s.name.as_str()).unwrap_or("");
                 if let Some(policy_def) = ctx.policy_registry.policies.get(policy_name) {
                     let inner_type_name = match inner.as_ref() {
@@ -1078,11 +1093,26 @@ fn check_expr(ctx: &mut CheckContext, expr: &aethel_hir::lower::HirExpr) -> Opti
                     };
                     if let Some(policy_claim) = policy_def.claims.get(inner_type_name) {
                         if !policy_claim.evidence.is_empty() {
-                            ctx.error(
-                                aethel_syntax::diagnostic::codes::EPISTEMIC_VERIFY_FAILED(),
-                                &format!("verification failed: policy `{policy_name}` requires evidence {:?} for `{inner_type_name}`, but verify() provides none", policy_claim.evidence),
-                                *span,
-                            );
+                            match evidence {
+                                None => {
+                                    ctx.error(
+                                        aethel_syntax::diagnostic::codes::EPISTEMIC_VERIFY_FAILED(),
+                                        &format!("verification failed: policy `{policy_name}` requires evidence {:?} for `{inner_type_name}`, but verify() provides none", policy_claim.evidence),
+                                        *span,
+                                    );
+                                }
+                                Some(provided_kind) => {
+                                    if !policy_claim.evidence.iter().any(|required| {
+                                        crate::checker::evidence_kinds_equal(required, provided_kind)
+                                    }) {
+                                        ctx.error(
+                                            aethel_syntax::diagnostic::codes::EPISTEMIC_POLICY_MISMATCH(),
+                                            &format!("policy `{policy_name}` requires evidence kind(s) {:?}, but verify() provides {:?}", policy_claim.evidence, provided_kind),
+                                            *span,
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1621,7 +1651,7 @@ fn lower_expr(e: &aethel_syntax::ast::Expr) -> IrExpr {
             span: *span, model: ir_exp_path(model), goal: goal.clone(),
             input: Box::new(lower_expr(input)), output_ty: ir_type_from_ast(output_ty),
         },
-        Expr::Verify { span, claim, policy } => IrExpr::Verify {
+        Expr::Verify { span, claim, policy, .. } => IrExpr::Verify {
             span: *span, claim: Box::new(lower_expr(claim)), policy: ir_typ_path(policy),
         },
         Expr::Reason { span, prompt } => IrExpr::Reason { span: *span, prompt: prompt.clone() },

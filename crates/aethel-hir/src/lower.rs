@@ -221,6 +221,9 @@ pub enum HirExpr {
         span: Span,
         claim: Box<HirExpr>,
         policy: HirTypePath,
+        /// Optional `evidence Kind` third argument carried through from the
+        /// surface syntax. Lowered verbatim from the AST variant.
+        evidence: Option<HirEvidenceKind>,
     },
     Reason {
         span: Span,
@@ -1137,10 +1140,12 @@ fn lower_expr(e: &Expr) -> HirExpr {
             span,
             claim,
             policy,
+            evidence,
         } => HirExpr::Verify {
             span: *span,
             claim: Box::new(lower_expr(claim)),
             policy: lower_type_path(policy),
+            evidence: evidence.clone().map(|k| lower_evidence_kind(&k)),
         },
         Expr::Reason { span, prompt } => HirExpr::Reason {
             span: *span,

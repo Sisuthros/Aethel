@@ -144,4 +144,67 @@ mod tests {
             .iter()
             .any(|diag| diag.code == codes::EPISTEMIC_VERIFIED_REQUIRED()));
     }
+
+    #[test]
+    fn accepts_matching_evidence_kind() {
+        // Surface syntax `verify(c, P, evidence Kind)` with the kind the
+        // policy requires must verify cleanly.
+        let diagnostics = check(
+            r#"
+            struct Order { id: string }
+            policy P {
+                Order: Order { evidence SignedAttestation "ok" }
+            }
+            fn f(c: Claim<Order>) -> Verified<Order, P> {
+                return verify(c, P, evidence SignedAttestation);
+            }
+            "#,
+        );
+        assert!(
+            !diagnostics.has_errors(),
+            "diagnostics: {:?}",
+            diagnostics.errors()
+        );
+    }
+
+    #[test]
+    fn rejects_wrong_evidence_kind() {
+        // BREAKER 009 — policy requires HumanReview, verify provides
+        // SignedAttestation → AE-EPISTEMIC-003.
+        let diagnostics = check(
+            r#"
+            struct Order { id: string }
+            policy P {
+                Order: Order { evidence HumanReview "sign-off" }
+            }
+            fn f(c: Claim<Order>) -> Verified<Order, P> {
+                return verify(c, P, evidence SignedAttestation);
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::EPISTEMIC_POLICY_MISMATCH()));
+    }
+
+    #[test]
+    fn rejects_missing_evidence_when_required() {
+        // No third argument while the policy requires evidence → AE-EPISTEMIC-005.
+        let diagnostics = check(
+            r#"
+            struct Order { id: string }
+            policy P {
+                Order: Order { evidence HumanReview "sign-off" }
+            }
+            fn f(c: Claim<Order>) -> Verified<Order, P> {
+                return verify(c, P);
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::EPISTEMIC_VERIFY_FAILED()));
+    }
 }

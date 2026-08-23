@@ -38,6 +38,13 @@ Held by: `breaker-001-tyyppivaarennos.aet`, `breaker-008-claim-returnina.aet`,
 This is *placement* safety: a claim cannot be pushed into a verified position.
 Placement is defended. Origin is a separate question — see G5.
 
+**Evidence kinds (enforced 2026-08-23):** `verify(c, Policy)` now accepts an
+optional third argument `evidence Kind`. A policy claim that requires evidence
+must receive at least one required kind at the call site: none provided →
+`AE-EPISTEMIC-005`, wrong kind → `AE-EPISTEMIC-003`, matching kind → accepted.
+Held by: `breaker-009-evidence-mismatch.aet` (`AE-EPISTEMIC-003`), promoted
+from known-gaps; `examples/refund/valid_verified.aet` holds the accepting side.
+
 ## G2: Effect Boundary Enforcement — **Enforced**
 **Effect operations can only be called from functions declaring the effect in their `uses` clause.**
 

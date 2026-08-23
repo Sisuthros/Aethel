@@ -836,6 +836,10 @@ pub enum Expr {
         span: Span,
         claim: Box<Expr>,
         policy: TypePath,
+        /// Optional `evidence Kind` third argument. `None` when the caller
+        /// provides no evidence; `Some` only via the `evidence` keyword form
+        /// `verify(c, Policy, evidence SignedAttestation)`.
+        evidence: Option<EvidenceKind>,
     },
     Reason {
         span: Span,

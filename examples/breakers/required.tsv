@@ -7,6 +7,7 @@ breaker-005-verify-no-args.aet	AE-PARSE-001
 breaker-006-verify-too-many-args.aet	AE-PARSE-001
 breaker-007-effect-no-args.aet	AE-TYPE-001
 breaker-008-claim-returnina.aet	AE-EPISTEMIC-001
+breaker-009-evidence-mismatch.aet	AE-EPISTEMIC-003
 breaker-010-claim-type-swap.aet	AE-EPISTEMIC-001
 breaker-011-undeclared-effect.aet	AE-TYPE-018
 breaker-012-double-verify.aet	AE-EPISTEMIC-002

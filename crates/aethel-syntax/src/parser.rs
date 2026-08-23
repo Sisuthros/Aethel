@@ -1706,6 +1706,7 @@ impl<'a> Parser<'a> {
                     lit: Literal::Unit { span: start },
                 }),
                 policy: TypePath::single(start, Ident::dummy("")),
+                evidence: None,
             });
         }
 
@@ -1722,6 +1723,7 @@ impl<'a> Parser<'a> {
                 span: start.merge(end),
                 claim: Box::new(claim),
                 policy: TypePath::single(start, Ident::dummy("")),
+                evidence: None,
             });
         }
 
@@ -1738,21 +1740,36 @@ impl<'a> Parser<'a> {
                 span: start.merge(end),
                 claim: Box::new(claim),
                 policy: TypePath::single(start, Ident::dummy("")),
+                evidence: None,
             });
         }
 
         let policy = self.parse_type_path()?;
+        self.eat(TokenKind::Comma); // separator between policy and any third argument
 
-        // Check for extra arguments after policy
-        while !self.check(TokenKind::RParen) && !self.is_at_end() {
-            self.error(
-                codes::PARSE_ERROR(),
-                "verify expects exactly 2 arguments, found extra argument",
-            );
-            self.eat(TokenKind::Comma); // consume comma if present
-            self.parse_expr(Precedence::Lowest)?; // consume extra arg
-            if !self.eat(TokenKind::Comma) {
-                break;
+        // Optional third argument: `evidence Kind` — the only legal extra
+        // form. A bare value (e.g. `verify(c, P, 42)`) stays a parse error.
+        let mut evidence = None;
+        if !self.check(TokenKind::RParen) && !self.is_at_end() {
+            if self.check(TokenKind::KwEvidence) {
+                if let Some(kind) = self.parse_evidence_kind() {
+                    evidence = Some(kind);
+                }
+                if !self.check(TokenKind::RParen) && !self.is_at_end() {
+                    self.error(
+                        codes::PARSE_ERROR(),
+                        "verify accepts at most 3 arguments (claim, policy, evidence Kind), found more",
+                    );
+                    while !self.check(TokenKind::RParen) && !self.is_at_end() {
+                        self.advance();
+                    }
+                }
+            } else {
+                self.error(
+                    codes::PARSE_ERROR(),
+                    "verify expects exactly 2 arguments, or a third `evidence Kind` argument",
+                );
+                self.parse_expr(Precedence::Lowest)?; // consume the stray arg
             }
         }
 
@@ -1763,6 +1780,7 @@ impl<'a> Parser<'a> {
             span: start.merge(end),
             claim: Box::new(claim),
             policy,
+            evidence,
         })
     }
 

@@ -3,12 +3,11 @@
 
 fn refund_valid(claim: Claim<RefundDecision>) -> Receipt
 uses PaymentGateway:
-    { let verified = verify(claim, RefundPolicy); return payment_gateway.refund(verified); }
+    { let verified = verify(claim, RefundPolicy, evidence SignedAttestation); return payment_gateway.refund(verified); }
 
 policy RefundPolicy {
     RefundDecision: RefundDecision {
-        // TODO: evidence passing to verify() not yet supported in surface syntax
-        // evidence SignedAttestation "Merchant signed refund authorization"
+        evidence SignedAttestation "Merchant signed refund authorization"
     }
 }
 

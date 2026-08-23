@@ -1,6 +1,6 @@
 fn process_request(proposal: Claim<Approval>) -> Receipt
 uses ApprovalGateway:
-    { let verified = verify(proposal, ApprovalPolicy); return gateway.approve(verified); }
+    { let verified = verify(proposal, ApprovalPolicy, evidence SignedAttestation); return gateway.approve(verified); }
 
 effect ApprovalGateway {
     fn approve(decision: Verified<Approval, ApprovalPolicy>) -> Receipt
@@ -8,8 +8,7 @@ effect ApprovalGateway {
 
 policy ApprovalPolicy {
     RequiredCheck: Approval {
-        // TODO: evidence passing to verify() not yet supported in surface syntax
-        // evidence SignedAttestation "Test"
+        evidence SignedAttestation "Test"
     }
 }
 

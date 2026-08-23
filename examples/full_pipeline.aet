@@ -19,15 +19,13 @@ struct ActionResult {
 
 policy RiskAssessment {
     ActionRisk: UserAction {
-        // TODO: evidence passing to verify() not yet supported in surface syntax
-        // evidence SignedAttestation "Risk model v2.1 assessment"
+        evidence SignedAttestation "Risk model v2.1 assessment"
     }
 }
 
 policy AdminOverride {
     OverrideAction: UserAction {
-        // TODO: evidence passing to verify() not yet supported in surface syntax
-        // evidence HumanReview "Admin Dmitry override log"
+        evidence HumanReview "Admin Dmitry override log"
     }
 }
 
@@ -52,7 +50,7 @@ uses AuditService, ExecutionService:
         let reason = reason("Analyzing action risk for {raw_action.id}");
 
         // Step 2: Verify — produces Verified<UserAction, RiskAssessment>
-        let assessed = verify(raw_action, RiskAssessment);
+        let assessed = verify(raw_action, RiskAssessment, evidence SignedAttestation);
 
         // Step 3: Chain effects — log, then execute
         let log = audit_service.log_action(assessed);
