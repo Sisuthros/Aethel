@@ -1,0 +1,11 @@
+// BREAKER 023 — the same Budget token pays for two ask calls
+// One token = one dispatch. The second ask is a use-after-move.
+// Expected: AE-TYPE-012 (linear use after move)
+
+struct Answer { text: string }
+
+fn double_spend(b: Budget) -> Claim<Answer> {
+    let first = ask(b, "first question", "some input", Answer);
+    let second = ask(b, "second question", "other input", Answer);
+    return second;
+}

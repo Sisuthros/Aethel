@@ -424,6 +424,10 @@ pub enum HirType {
         ty: Box<HirType>,
         policy: Box<HirType>,
     },
+    /// Budget capability token — linear, consumed by `ask`.
+    Budget {
+        span: Span,
+    },
     Array {
         span: Span,
         ty: Box<HirType>,
@@ -848,6 +852,7 @@ fn lower_type(ty: &Type) -> HirType {
             span: *span,
             ty: Box::new(lower_type(ty)),
         },
+        Type::Budget { span } => HirType::Budget { span: *span },
         Type::Verified { span, ty, policy } => HirType::Verified {
             span: *span,
             ty: Box::new(lower_type(ty)),

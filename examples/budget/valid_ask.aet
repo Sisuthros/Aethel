@@ -1,0 +1,8 @@
+// Valid: the Budget token pays for exactly one ask dispatch
+// Should compile without any capability or linearity error
+
+struct Answer { text: string }
+
+fn ask_once(b: Budget) -> Claim<Answer> {
+    return ask(b, "classify this", "some input", Answer);
+}

@@ -353,6 +353,7 @@ fn ast_type_to_string(ty: &aethel_syntax::ast::Type) -> String {
             .collect::<Vec<_>>()
             .join("::"),
         Type::Claim { ty, .. } => format!("Claim<{}>", ast_type_to_string(ty)),
+        Type::Budget { .. } => "Budget".into(),
         Type::Verified { ty, policy, .. } => format!(
             "Verified<{}, {}>",
             ast_type_to_string(ty),

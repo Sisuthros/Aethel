@@ -20,3 +20,6 @@ breaker-018-no-policy-defined.aet	AE-NAME-002
 breaker-019-claim-wrong-arg.aet	AE-EPISTEMIC-001
 breaker-020-scope-escape.aet	AE-EPISTEMIC-001
 breaker-021-origin-uninitialised.aet	AE-EPISTEMIC-002
+breaker-022-ask-no-budget.aet	AE-TYPE-014
+breaker-023-budget-double-spend.aet	AE-TYPE-012
+breaker-024-budget-unspent.aet	AE-TYPE-013

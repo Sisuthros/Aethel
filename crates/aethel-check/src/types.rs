@@ -143,6 +143,7 @@ pub fn lower_hir_type(ty: &HirType) -> IrType {
             ty: Box::new(lower_hir_type(ty)),
             policy: Box::new(lower_hir_type(policy)),
         },
+        Budget { span } => IrType::Budget { span: *span },
         Array { span, ty, size } => IrType::Array {
             span: *span,
             ty: Box::new(lower_hir_type(ty)),

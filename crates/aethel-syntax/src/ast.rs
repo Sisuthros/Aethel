@@ -411,6 +411,8 @@ pub enum Type {
         ty: Box<Type>,
         policy: Box<Type>,
     },
+    /// Budget capability token — linear, consumed by `ask`
+    Budget { span: Span },
     /// Array `[T; n]`
     Array {
         span: Span,
@@ -442,6 +444,7 @@ impl Spanned for Type {
             Type::Owned { span, .. } => *span,
             Type::Claim { span, .. } => *span,
             Type::Verified { span, .. } => *span,
+            Type::Budget { span } => *span,
             Type::Array { span, .. } => *span,
             Type::Tuple { span, .. } => *span,
             Type::Fn { span, .. } => *span,

@@ -56,6 +56,8 @@ pub enum TokenKind {
     KwClaim,
     #[token("Verified")]
     KwVerified,
+    #[token("Budget")]
+    KwBudget,
     #[token("policy")]
     KwPolicy,
     #[token("effect")]
@@ -216,6 +218,7 @@ impl TokenKind {
             TokenKind::KwOnce => "once",
             TokenKind::KwClaim => "Claim",
             TokenKind::KwVerified => "Verified",
+            TokenKind::KwBudget => "Budget",
             TokenKind::KwPolicy => "policy",
             TokenKind::KwEffect => "effect",
             TokenKind::KwEvidence => "evidence",

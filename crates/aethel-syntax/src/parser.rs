@@ -1883,6 +1883,14 @@ impl<'a> Parser<'a> {
             });
         }
 
+        // Budget capability token type (no generics)
+        if self.eat(TokenKind::KwBudget) {
+            let end = self.previous_span();
+            return Some(Type::Budget {
+                span: start.merge(end),
+            });
+        }
+
         // Function type
         if self.eat(TokenKind::KwFn) {
             self.expect(TokenKind::LParen, "expected `(`")?;

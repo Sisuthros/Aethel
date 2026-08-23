@@ -431,6 +431,10 @@ pub enum IrType {
         ty: Box<IrType>,
         policy: Box<IrType>,
     },
+    /// Budget capability token — linear, consumed by `ask`.
+    Budget {
+        span: Span,
+    },
     Array {
         span: Span,
         ty: Box<IrType>,

@@ -72,14 +72,23 @@ Held by: unit tests `rejects_double_verification_of_same_claim`,
 `consumption_through_alias_counts`, `rejects_unconsumed_claim_parameter`
 in `crates/aethel-check/src/sound_checker/mod.rs`.
 
-## G4: Budget Reservation — **Target**
+## G4: Budget Reservation — **Enforced** (static)
 **Model calls must reserve budget before dispatch.**
 
-The intent is that the `ask` expression requires a `Budget` capability and
-reserves tokens statically, making exhaustion a compile-time error.
+The `ask` expression requires a live, linear **`Budget` capability token** in
+its first position and consumes it: one token pays for exactly one dispatch.
 
-Budget tracking today is compile-time bookkeeping with no runtime enforcement.
-See `docs/non-guarantees.md` NG3, which is the accurate description.
+- Calling `ask` without a Budget token → `AE-TYPE-014` (`breaker-022`)
+- Spending the same token twice → `AE-TYPE-012` (`breaker-023`)
+- A `Budget` parameter never spent → `AE-TYPE-013` (`breaker-024`)
+- One live token spent once → accepted (`examples/budget/valid_ask.aet`)
+
+This makes model-call exhaustion a compile-time shape error for the *number*
+of calls: a function's token parameters bound its maximum dispatch count.
+
+**Still runtime, not compile-time:** the checker cannot know how many tokens
+an actual provider call would consume in currency or tokens — that remains a
+runtime concern (`docs/non-guarantees.md` NG3, updated to match).
 
 ## G5: Verified Construction — **Enforced**
 **`Verified<T, Policy>` can only be constructed via `verify(claim, policy)`.**

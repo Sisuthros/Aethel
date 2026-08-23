@@ -254,4 +254,76 @@ mod tests {
             .iter()
             .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
     }
+
+    #[test]
+    fn rejects_ask_without_budget_token() {
+        // BREAKER 022 — the model position of `ask` must carry a live Budget
+        // token. A non-Budget path is rejected with AE-TYPE-014.
+        let diagnostics = check(
+            r#"
+            struct Answer { text: string }
+            fn no_budget() -> Claim<Answer> {
+                return ask(model, "classify this", "some input", Answer);
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::CAPABILITY_REQUIRED()));
+    }
+
+    #[test]
+    fn rejects_budget_double_spend() {
+        // BREAKER 023 — one Budget token pays for exactly one `ask`.
+        let diagnostics = check(
+            r#"
+            struct Answer { text: string }
+            fn double_spend(b: Budget) -> Claim<Answer> {
+                let first = ask(b, "first question", "some input", Answer);
+                let second = ask(b, "second question", "other input", Answer);
+                return second;
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_USE_AFTER_MOVE()));
+    }
+
+    #[test]
+    fn rejects_unspent_budget_parameter() {
+        // BREAKER 024 — a Budget parameter must be consumed by exactly one ask.
+        let diagnostics = check(
+            r#"
+            fn unused_budget(b: Budget) -> int {
+                let x = 42;
+                return x;
+            }
+            "#,
+        );
+        assert!(diagnostics
+            .errors()
+            .iter()
+            .any(|diag| diag.code == codes::LINEAR_NOT_CONSUMED()));
+    }
+
+    #[test]
+    fn accepts_single_budget_spend() {
+        // Control for 022/023/024: a live token spent once type checks clean.
+        let diagnostics = check(
+            r#"
+            struct Answer { text: string }
+            fn ask_once(b: Budget) -> Claim<Answer> {
+                return ask(b, "classify this", "some input", Answer);
+            }
+            "#,
+        );
+        assert!(
+            !diagnostics.has_errors(),
+            "diagnostics: {:?}",
+            diagnostics.errors()
+        );
+    }
 }

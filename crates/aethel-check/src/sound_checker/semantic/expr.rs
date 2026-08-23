@@ -237,10 +237,38 @@ impl SemanticChecker {
             hir::HirExpr::Continue { span } => ir::IrType::Never { span: *span },
             hir::HirExpr::Ask {
                 span,
+                model,
+                goal: _,
                 input,
                 output_ty,
-                ..
             } => {
+                // G4 budget reservation: the model position carries the Budget
+                // capability token. It must be a live linear binding and is
+                // consumed here — one token pays for exactly one dispatch.
+                let budget_name = expr_path_name(model);
+                let mut source_name = budget_name.clone();
+                if let Some(source) = self.linear_aliases.get(&source_name) {
+                    source_name = source.clone();
+                }
+                let is_live_budget = self.linear_params.iter().any(|(n, _)| *n == source_name)
+                    && matches!(self.lookup(&budget_name), Some(ir::IrType::Budget { .. }));
+                if !is_live_budget {
+                    self.error(
+                        codes::CAPABILITY_REQUIRED(),
+                        format!(
+                            "`ask` requires a live Budget token in its first position, found `{budget_name}`"
+                        ),
+                        *span,
+                    );
+                } else if !self.linear_consumed.insert(source_name) {
+                    self.error(
+                        codes::LINEAR_USE_AFTER_MOVE(),
+                        format!(
+                            "budget `{budget_name}` is already spent — a Budget token pays for exactly one `ask`"
+                        ),
+                        *span,
+                    );
+                }
                 self.check_expr(input);
                 self.validate_type(output_ty);
                 ir::IrType::Claim {
@@ -372,15 +400,67 @@ impl SemanticChecker {
     }
 
     pub(super) fn check_builtin_ask(&mut self, span: Span, args: &[hir::HirExpr]) -> ir::IrType {
-        // ask(input, OutputType) or ask(model, input, OutputType) -> Claim<OutputType>
-        if args.len() < 2 || args.len() > 3 {
+        // ask(budget, input, OutputType) or ask(model, budget, input, OutputType)
+        // The FIRST argument must be a live Budget token. `ask` consumes it
+        // linearly: one token = one model dispatch (G4 budget reservation).
+        if args.len() < 3 || args.len() > 4 {
             self.error(
-                codes::TYPE_MISMATCH(),
-                format!("ask expects 2 or 3 arguments, received {}", args.len()),
+                codes::CAPABILITY_REQUIRED(),
+                format!(
+                    "ask requires a Budget capability as its first argument (ask(budget, input, OutputType)), received {} argument(s)",
+                    args.len()
+                ),
                 span,
             );
+            for arg in args {
+                self.check_expr(arg);
+            }
             return ir::IrType::Unit { span };
         }
+
+        // Budget consumption: the first argument must be a path naming a live
+        // Budget binding — a parameter or an alias of one.
+        match args.first() {
+            Some(hir::HirExpr::Path { path, .. }) => {
+                let mut name = expr_path_name(path);
+                if let Some(source) = self.linear_aliases.get(&name) {
+                    name = source.clone();
+                }
+                let is_budget_param = self.linear_params.iter().any(|(n, _)| *n == name)
+                    && matches!(
+                        self.lookup(&expr_path_name(path)),
+                        Some(ir::IrType::Budget { .. })
+                    );
+                if !is_budget_param {
+                    self.error(
+                        codes::CAPABILITY_REQUIRED(),
+                        format!(
+                            "`ask` requires a live Budget token as its first argument, found `{}`",
+                            expr_path_name(path)
+                        ),
+                        expr_span(args.first().expect("arg checked above")),
+                    );
+                } else if !self.linear_consumed.insert(name) {
+                    // Duplication guard: the same token already paid for a call.
+                    self.error(
+                        codes::LINEAR_USE_AFTER_MOVE(),
+                        format!(
+                            "budget `{}` is already spent — a Budget token pays for exactly one `ask`",
+                            expr_path_name(path)
+                        ),
+                        expr_span(args.first().expect("arg checked above")),
+                    );
+                }
+            }
+            _ => {
+                self.error(
+                    codes::CAPABILITY_REQUIRED(),
+                    "`ask` requires a live Budget token as its first argument",
+                    args.first().map_or(span, expr_span),
+                );
+            }
+        }
+
         // Check all provided arguments
         for arg in args {
             self.check_expr(arg);

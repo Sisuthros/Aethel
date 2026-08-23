@@ -1,0 +1,8 @@
+// BREAKER 024 — a Budget parameter that is never spent
+// A linear Budget token must be consumed by exactly one ask.
+// Expected: AE-TYPE-013 (linear not consumed)
+
+fn unused_budget(b: Budget) -> int {
+    let x = 42;
+    return x;
+}

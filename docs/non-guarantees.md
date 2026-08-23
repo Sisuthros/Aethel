@@ -13,9 +13,13 @@ The interpreter does not serialize stack frames to disk. A crash loses in-flight
 The checker ensures `commit_once` is well-formed, but the runtime does not yet implement the reconciliation protocol that guarantees exactly-once execution against external providers.
 
 ## NG3: Model Budget Enforcement
-**Budget tracking is compile-time only.**
+**Budget tracking is static (call-count), not metered.**
 
-The type checker verifies that `Budget` capabilities are threaded correctly, but there is no runtime enforcement of token limits against actual model provider APIs.
+Since 2026-08-23 the type checker enforces that every `ask` consumes a live,
+linear `Budget` token (G4): the number of model dispatches in a function is
+bounded at compile time by its token parameters. What is still *not*
+enforced: actual token/currency metering against real provider APIs, and
+runtime budget accounting for dynamic dispatch counts.
 
 ## NG4: Wasm Sandboxing
 **No WebAssembly execution or component model isolation.**

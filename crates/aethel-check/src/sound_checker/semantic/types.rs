@@ -167,6 +167,7 @@ impl SemanticChecker {
             ir::IrType::Float { .. } => "float".into(),
             ir::IrType::String { .. } => "string".into(),
             ir::IrType::Path { path, .. } => ir_path_name(path),
+            ir::IrType::Budget { .. } => "Budget".into(),
             ir::IrType::Ref { is_mut, ty, .. } => {
                 format!(
                     "&{}{}",

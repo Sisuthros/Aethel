@@ -1,0 +1,9 @@
+// BREAKER 022 — ask without a Budget capability token
+// The model position carries a non-Budget path.
+// Expected: AE-TYPE-014 (capability required)
+
+struct Answer { text: string }
+
+fn no_budget() -> Claim<Answer> {
+    return ask(model, "classify this", "some input", Answer);
+}

@@ -255,6 +255,8 @@ impl SemanticChecker {
                     }
                 }
             }
+            // A Budget token is a built-in capability type — nothing to resolve.
+            hir::HirType::Budget { .. } => {}
             hir::HirType::Tuple { types, .. } => {
                 for inner in types {
                     self.validate_type(inner);
@@ -314,10 +316,14 @@ impl SemanticChecker {
             .map(|effect| type_path_name(&effect.path))
             .collect();
 
-        // Linear types: Claim-typed parameters must be consumed via `verify`
-        // before the function body ends.
+        // Linear types: Claim- and Budget-typed parameters must be consumed
+        // before the function body ends. A Claim is consumed by `verify`,
+        // a Budget by `ask`.
         for param in &def.params {
-            if matches!(lower_type(&param.ty), ir::IrType::Claim { .. }) {
+            if matches!(
+                lower_type(&param.ty),
+                ir::IrType::Claim { .. } | ir::IrType::Budget { .. }
+            ) {
                 self.linear_params.push((param.name.clone(), param.span));
             }
         }
