@@ -1,0 +1,67 @@
+// Relocation compliance — EU citizen route to Cyprus.
+//
+// Every stage of the relocation must be backed by its own verified fact.
+// The policy chain mirrors the Migration Department's requirements for an
+// EU citizen registering residence:
+//
+//   MEU1 registration   within 4 months of entry   (evidence: passport stamp)
+//   GESY enrollment     after 183 days of stay      (evidence: utility bill)
+//   Tax registration    before first employment    (evidence: tax receipt)
+//
+// Linearity is the point: each requirement consumes exactly one claim with
+// exactly one piece of evidence. A report cannot be produced from a single
+// unverified assertion, and no evidence can be double-spent across stages.
+
+struct Applicant {
+    name: string,
+    nationality_zone: string,
+    entry_date: string,
+    days_in_cyprus: int,
+}
+
+struct ComplianceReport {
+    applicant_name: string,
+    route: string,
+    requirements_met: int,
+}
+
+policy Meu1Deadline {
+    Applicant: Applicant { evidence PassportStamp "entry date from passport" }
+}
+
+policy GesyEligibility {
+    Applicant: Applicant { evidence UtilityBill "proof of address" }
+}
+
+policy TaxRegistration {
+    Applicant: Applicant { evidence TaxReceipt "tax office receipt" }
+}
+
+effect CivilRegistry {
+    fn register_meu1(a: Verified<Applicant, Meu1Deadline>) -> ComplianceReport
+}
+
+effect HealthInsurance {
+    fn enroll_gesy(a: Verified<Applicant, GesyEligibility>) -> ComplianceReport
+}
+
+effect TaxOffice {
+    fn register_tax(a: Verified<Applicant, TaxRegistration>) -> ComplianceReport
+}
+
+fn process_relocation(
+    proof_of_entry: Claim<Applicant>,
+    proof_of_stay: Claim<Applicant>,
+    proof_of_tax: Claim<Applicant>,
+) -> ComplianceReport
+uses CivilRegistry, HealthInsurance, TaxOffice:
+    {
+        let stage1 = verify(proof_of_entry, Meu1Deadline, evidence PassportStamp);
+        let registered = civil_registry.register_meu1(stage1);
+
+        let stage2 = verify(proof_of_stay, GesyEligibility, evidence UtilityBill);
+        let insured = health_insurance.enroll_gesy(stage2);
+
+        let stage3 = verify(proof_of_tax, TaxRegistration, evidence TaxReceipt);
+        return tax_office.register_tax(stage3);
+    }

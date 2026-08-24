@@ -1,0 +1,37 @@
+// BREAKER — wrong-route report: a third-country national's claim is fed to
+// the EU-citizen MEU1 policy. The policy does not accept claims of this
+// route type, so verification must fail.
+// Expected: AE-EPISTEMIC-005 (policy does not accept this claim)
+
+struct ThirdCountryApplicant {
+    name: string,
+    visa_category: string,
+    employer: string,
+}
+
+struct ComplianceReport {
+    applicant_name: string,
+    route: string,
+    requirements_met: int,
+}
+
+policy Meu1Deadline {
+    Applicant: Applicant { evidence PassportStamp "EU citizen entry stamp" }
+}
+
+policy WorkPermitRoute {
+    ThirdCountryApplicant: ThirdCountryApplicant { evidence EmploymentContract "signed contract" }
+}
+
+effect CivilRegistry {
+    fn register_meu1(a: Verified<ThirdCountryApplicant, Meu1Deadline>) -> ComplianceReport
+}
+
+fn wrong_route(permit_claim: Claim<ThirdCountryApplicant>) -> ComplianceReport
+uses CivilRegistry:
+    {
+        // The EU-citizen MEU1 policy cannot accept a third-country permit
+        // claim — different struct, different route entirely.
+        let forged = verify(permit_claim, Meu1Deadline, evidence PassportStamp);
+        return civil_registry.register_meu1(forged);
+    }

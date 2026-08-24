@@ -1,0 +1,55 @@
+// BREAKER — relocation applicant missing the tax-registration evidence.
+// The TaxOffice stage cannot run: proof_of_tax is never verified, so it
+// remains an unconsumed linear claim AND the effect call has no argument.
+// Expected: AE-TYPE-013 (unconsumed claim) + AE-TYPE-001
+
+struct Applicant {
+    name: string,
+    nationality_zone: string,
+    entry_date: string,
+    days_in_cyprus: int,
+}
+
+struct ComplianceReport {
+    applicant_name: string,
+    route: string,
+    requirements_met: int,
+}
+
+policy Meu1Deadline {
+    Applicant: Applicant { evidence PassportStamp "entry date from passport" }
+}
+
+policy GesyEligibility {
+    Applicant: Applicant { evidence UtilityBill "proof of address" }
+}
+
+policy TaxRegistration {
+    Applicant: Applicant { evidence TaxReceipt "tax office receipt" }
+}
+
+effect CivilRegistry {
+    fn register_meu1(a: Verified<Applicant, Meu1Deadline>) -> ComplianceReport
+}
+
+effect HealthInsurance {
+    fn enroll_gesy(a: Verified<Applicant, GesyEligibility>) -> ComplianceReport
+}
+
+effect TaxOffice {
+    fn register_tax(a: Verified<Applicant, TaxRegistration>) -> ComplianceReport
+}
+
+fn incomplete_application(
+    proof_of_entry: Claim<Applicant>,
+    proof_of_stay: Claim<Applicant>,
+    proof_of_tax: Claim<Applicant>,
+) -> ComplianceReport
+uses CivilRegistry, HealthInsurance:
+    {
+        let stage1 = verify(proof_of_entry, Meu1Deadline, evidence PassportStamp);
+        let registered = civil_registry.register_meu1(stage1);
+
+        let stage2 = verify(proof_of_stay, GesyEligibility, evidence UtilityBill);
+        return health_insurance.enroll_gesy(stage2);
+    }

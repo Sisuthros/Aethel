@@ -23,3 +23,5 @@ breaker-021-origin-uninitialised.aet	AE-EPISTEMIC-002
 breaker-022-ask-no-budget.aet	AE-TYPE-014
 breaker-023-budget-double-spend.aet	AE-TYPE-012
 breaker-024-budget-unspent.aet	AE-TYPE-013
+breaker-025-incomplete-relocation.aet	AE-TYPE-013
+breaker-026-wrong-route.aet	AE-EPISTEMIC-005
