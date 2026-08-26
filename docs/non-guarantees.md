@@ -22,9 +22,12 @@ enforced: actual token/currency metering against real provider APIs, and
 runtime budget accounting for dynamic dispatch counts.
 
 ## NG4: Wasm Sandboxing
-**No WebAssembly execution or component model isolation.**
+**WebAssembly sandbox execution is now live for guest WAT modules.**
 
-The `aethel-wasm` crate exists but does not execute Wasm components. Tool calls run with full host authority.
+The `aethel-wasm` crate is no longer a stub: it uses wasmtime 45 to compile
+and run real Wasm guests inside a fresh store. Host authority is not exposed
+by default. The API is intentionally narrow (`call_i32`) — a full Aethel
+IR→Wasm lowering ABI is future work.
 
 ## NG5: Prompt Injection Prevention
 **No context separation or compiler-enforced prompt boundaries.**

@@ -14,8 +14,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 wasmtime = { version = "45", default-features = false, features = [
+    "std",
     "cranelift",
     "runtime",
     "component-model",
     "async",
+    "wat",
 ] }
