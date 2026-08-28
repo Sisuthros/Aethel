@@ -60,7 +60,13 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModule, FileId)> {
+fn compile_and_check(
+    file: &PathBuf,
+) -> anyhow::Result<(
+    aethel_ir::lower::IrModule,
+    FileId,
+    aethel_effects::EffectRegistry,
+)> {
     let source = std::fs::read_to_string(file)?;
     let file_id = FileId::new(0);
 
@@ -90,7 +96,7 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
     }
 
     // Phase 2: Type-check via HIR-based checker
-    let (ir_module, check_diagnostics) =
+    let (ir_module, check_diagnostics, effect_registry) =
         aethel_check::checker::check_hir_module(&hir_module, file_id);
 
     if check_diagnostics.has_errors() {
@@ -126,7 +132,7 @@ fn compile_and_check(file: &PathBuf) -> anyhow::Result<(aethel_ir::lower::IrModu
         );
     }
 
-    Ok((ir_module, file_id))
+    Ok((ir_module, file_id, effect_registry))
 }
 
 fn check_file(file: &PathBuf) -> anyhow::Result<()> {
@@ -284,9 +290,9 @@ fn emit_ir(file: &PathBuf) -> anyhow::Result<()> {
 }
 
 fn run_file(file: &PathBuf, show_trace: bool) -> anyhow::Result<()> {
-    let (ir_module, _file_id) = compile_and_check(file)?;
+    let (ir_module, _file_id, effect_registry) = compile_and_check(file)?;
 
-    let mut evaluator = aethel_interpreter::eval::Evaluator::new();
+    let mut evaluator = aethel_interpreter::eval::Evaluator::with_effect_registry(effect_registry);
     let result = evaluator.eval_module(&ir_module)?;
 
     // Print results

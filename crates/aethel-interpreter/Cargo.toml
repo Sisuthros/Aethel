@@ -12,6 +12,7 @@ aethel-syntax = { path = "../aethel-syntax" }
 aethel-runtime = { path = "../aethel-runtime" }
 aethel-effects = { path = "../aethel-effects" }
 aethel-model = { path = "../aethel-model" }
+aethel-policy-engine = { path = "../aethel-policy-engine" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

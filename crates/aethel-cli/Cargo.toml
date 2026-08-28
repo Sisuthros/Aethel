@@ -13,6 +13,7 @@ aethel-check = { path = "../aethel-check" }
 aethel-interpreter = { path = "../aethel-interpreter" }
 aethel-testkit = { path = "../aethel-testkit" }
 aethel-ir = { path = "../aethel-ir" }
+aethel-effects = { path = "../aethel-effects" }
 clap = { workspace = true }
 colored = { workspace = true }
 anyhow = { workspace = true }

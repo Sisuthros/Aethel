@@ -20,22 +20,22 @@ use aethel_hir::lower::HirEvidenceKind;
 mod expr;
 mod types;
 
-#[derive(Clone)]
-struct OperationSig {
-    params: Vec<ir::IrType>,
-    ret: ir::IrType,
+#[derive(Debug, Clone)]
+pub struct OperationSig {
+    pub params: Vec<ir::IrType>,
+    pub ret: ir::IrType,
 }
 
-#[derive(Clone)]
-struct FunctionSig {
-    params: Vec<ir::IrType>,
-    ret: ir::IrType,
+#[derive(Debug, Clone)]
+pub struct FunctionSig {
+    pub params: Vec<ir::IrType>,
+    pub ret: ir::IrType,
 }
 
 #[derive(Default)]
 pub(super) struct SemanticChecker {
     diagnostics: Diagnostics,
-    effects: HashMap<String, HashMap<String, OperationSig>>,
+    pub(super) effects: HashMap<String, HashMap<String, OperationSig>>,
     policies: HashMap<String, Vec<ir::IrType>>,
     // Track evidence kinds required by each policy's claims
     policy_evidence: HashMap<String, Vec<HirEvidenceKind>>,
@@ -60,6 +60,12 @@ impl SemanticChecker {
         let mut checker = Self::default();
         checker.collect(module);
         checker
+    }
+
+    /// Expose the collected effect signatures as an `EffectRegistry` for the
+    /// runtime interpreter's NG6 policy authorisation.
+    pub fn effect_registry(&self) -> aethel_effects::EffectRegistry {
+        crate::sound_checker::effect_registry::registry_from_semantic(self)
     }
 
     pub(super) fn collect(&mut self, module: &hir::HirModule) {

@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use aethel_effects::EffectRegistry;
 use aethel_ir::lower::*;
 use aethel_syntax::span::Span;
 use anyhow::Result;
@@ -144,10 +145,16 @@ pub struct Evaluator {
     verified_count: usize,
     claim_count: usize,
     return_value: Value,
+    authorizer: Option<crate::policy::PolicyAuthorizer>,
 }
 
 impl Evaluator {
     pub fn new() -> Self {
+        Self::with_authorizer(None)
+    }
+
+    /// Create an evaluator with a runtime policy authorizer.
+    pub fn with_authorizer(authorizer: Option<crate::policy::PolicyAuthorizer>) -> Self {
         Self {
             env: Env::new(),
             trace: Vec::new(),
@@ -155,7 +162,13 @@ impl Evaluator {
             verified_count: 0,
             claim_count: 0,
             return_value: Value::Unit,
+            authorizer,
         }
+    }
+
+    /// Build an evaluator wired with an `EffectRegistry` for runtime policy checks.
+    pub fn with_effect_registry(registry: EffectRegistry) -> Self {
+        Self::with_authorizer(Some(crate::policy::PolicyAuthorizer::new(registry)))
     }
 
     pub fn eval_module(&mut self, module: &IrModule) -> Result<EvalResult> {
@@ -398,13 +411,14 @@ impl Evaluator {
                 })
             }
             IrExpr::CommitOnce { span, effect, args } => {
-                let name = type_path_name(&effect.path);
+                let effect_name = type_path_name(&effect.path);
+                let operation_name = effect_name.clone();
                 let value = args
                     .first()
                     .map(|arg| self.eval_expr(arg))
                     .transpose()?
                     .unwrap_or(Value::Error("missing commit_once argument".into()));
-                self.record_effect(*span, name, value)
+                self.record_effect(*span, effect_name, operation_name, value)
             }
             IrExpr::Reason { prompt, .. } => {
                 self.claim_count += 1;
@@ -478,29 +492,61 @@ impl Evaluator {
         method: &str,
         args: &[IrExpr],
     ) -> Result<Value> {
+        let effect_name = match receiver {
+            IrExpr::Path { path, .. } => path_name(path),
+            _ => String::new(),
+        };
         let argument = if let Some(first) = args.first() {
             self.eval_expr(first)?
         } else {
             self.eval_expr(receiver)?
         };
-        self.record_effect(span, method.to_string(), argument)
+        self.record_effect(span, effect_name, method.to_string(), argument)
     }
 
-    fn record_effect(&mut self, span: Span, name: String, argument: Value) -> Result<Value> {
+    fn record_effect(
+        &mut self,
+        span: Span,
+        effect_name: String,
+        operation_name: String,
+        argument: Value,
+    ) -> Result<Value> {
         let verified = argument.is_verified();
-        let error = (!verified).then(|| "unverified claim".to_string());
+        let argument_policy = match &argument {
+            Value::Verified { policy, .. } => Some(policy.as_str()),
+            _ => None,
+        };
+        let auth_result = self
+            .authorizer
+            .as_ref()
+            .map(|authorizer| authorizer.authorize(&effect_name, &operation_name, argument_policy));
+        let error = if let Some(ref result) = auth_result {
+            if result.is_allowed() {
+                (!verified).then(|| "unverified claim".to_string())
+            } else {
+                result
+                    .violation_message()
+                    .or_else(|| (!verified).then(|| "unverified claim".to_string()))
+            }
+        } else {
+            (!verified).then(|| "unverified claim".to_string())
+        };
         self.trace.push(EffectTrace {
             span,
-            effect_name: name.clone(),
+            effect_name: operation_name.clone(),
             argument: argument.clone(),
             was_verified: verified,
             error: error.clone(),
         });
-        if verified {
+        if verified && auth_result.as_ref().map_or(true, |r| r.is_allowed()) {
             self.verified_count += 1;
             Ok(Value::Unit)
         } else {
-            let message = format!("unverified effect `{name}` blocked at runtime");
+            let message = auth_result
+                .and_then(|r| r.violation_message())
+                .unwrap_or_else(|| {
+                    format!("unverified effect `{operation_name}` blocked at runtime")
+                });
             self.record_violation(message.clone());
             Ok(Value::Error(message))
         }

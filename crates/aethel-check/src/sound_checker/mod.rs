@@ -1,5 +1,6 @@
 //! Single sound HIR-based checker used by every Aethel CLI command.
 
+mod effect_registry;
 mod lower;
 mod semantic;
 mod util;
@@ -14,7 +15,7 @@ use aethel_syntax::span::{FileId, Span};
 pub fn check_module(module: &ast::Module, file_id: FileId) -> (ir::IrModule, Diagnostics) {
     let mut hir_module = aethel_hir::lower::lower_module(module, file_id);
     let resolver_errors = aethel_hir::resolve::resolve_module(&mut hir_module);
-    let (ir_module, mut diagnostics) = check_hir_module(&hir_module, file_id);
+    let (ir_module, mut diagnostics, _registry) = check_hir_module(&hir_module, file_id);
     for error in resolver_errors {
         diagnostics.push(
             DiagnosticBuilder::error(codes::UNDEFINED_VAR(), error)
@@ -26,9 +27,14 @@ pub fn check_module(module: &ast::Module, file_id: FileId) -> (ir::IrModule, Dia
 }
 
 /// Check HIR and emit IR only after the semantic pass has completed.
-pub fn check_hir_module(module: &hir::HirModule, file_id: FileId) -> (ir::IrModule, Diagnostics) {
-    let diagnostics = semantic::SemanticChecker::new(module).check(module);
-    (lower::lower_module(module, file_id), diagnostics)
+pub fn check_hir_module(
+    module: &hir::HirModule,
+    file_id: FileId,
+) -> (ir::IrModule, Diagnostics, aethel_effects::EffectRegistry) {
+    let checker = semantic::SemanticChecker::new(module);
+    let registry = checker.effect_registry();
+    let diagnostics = checker.check(module);
+    (lower::lower_module(module, file_id), diagnostics, registry)
 }
 
 #[cfg(test)]

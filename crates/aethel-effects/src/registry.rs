@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 type BuiltinOperation<'a> = (&'a str, &'a [(&'a str, &'a str)], Option<&'a str>);
 
 /// Effect registry for known effects and their operations.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct EffectRegistry {
     pub effects: IndexMap<String, EffectDefinition>,
 }
@@ -65,12 +65,61 @@ impl EffectRegistry {
         self.effects.get(name)
     }
 
+    /// Case-insensitive lookup by effect name. Used at runtime because the
+    /// source variable bound to an effect (e.g. `payment_gateway`) may differ
+    /// in case from the declared effect type (`PaymentGateway`).
+    pub fn get_case_insensitive(&self, name: &str) -> Option<&EffectDefinition> {
+        let name = name.to_lowercase();
+        self.effects
+            .values()
+            .find(|effect| effect.name.to_lowercase() == name)
+    }
+
     pub fn resolve_operation(&self, effect: &str, op: &str) -> Option<&EffectOperation> {
         self.effects
             .get(effect)?
             .operations
             .iter()
             .find(|operation| operation.name == op)
+    }
+
+    /// Resolve an effect operation given a possibly-casemismatched variable
+    /// name and a method name. Fails closed: returns `None` if the operation
+    /// cannot be uniquely identified. If the hint matches a known effect
+    /// (case-insensitively) and that effect declares the operation, it wins;
+    /// otherwise we search the whole registry for an effect that declares the
+    /// operation and return it only if it is unambiguous.
+    pub fn resolve_operation_by_hint(
+        &self,
+        hint: &str,
+        op: &str,
+    ) -> Option<(&EffectDefinition, &EffectOperation)> {
+        // 1. Exact effect name.
+        if let Some(effect) = self.get(hint) {
+            if let Some(operation) = effect.operations.iter().find(|o| o.name == op) {
+                return Some((effect, operation));
+            }
+        }
+
+        // 2. Case-insensitive effect name.
+        if let Some(effect) = self.get_case_insensitive(hint) {
+            if let Some(operation) = effect.operations.iter().find(|o| o.name == op) {
+                return Some((effect, operation));
+            }
+        }
+
+        // 3. Last resort: search all effects for the operation. Only succeed
+        // when exactly one effect declares it to avoid authorising the wrong
+        // capability.
+        let mut matches = self.effects.values().filter_map(|effect| {
+            effect
+                .operations
+                .iter()
+                .find(|o| o.name == op)
+                .map(|operation| (effect, operation))
+        });
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
     }
 }
 
@@ -85,9 +134,29 @@ fn parse_type(value: &str) -> aethel_ir::lower::IrType {
             span: Span::zero(),
             path: IrTypePath::single("Receipt"),
         },
-        _ => IrType::Path {
-            span: Span::zero(),
-            path: IrTypePath::single(value),
-        },
+        _ => {
+            let policy = value.strip_prefix("Verified<").and_then(|rest| {
+                rest.strip_suffix(">")
+                    .and_then(|inner| inner.split(", ").nth(1))
+            });
+            if let Some(policy) = policy {
+                IrType::Verified {
+                    span: Span::zero(),
+                    ty: Box::new(IrType::Path {
+                        span: Span::zero(),
+                        path: IrTypePath::single("Data"),
+                    }),
+                    policy: Box::new(IrType::Path {
+                        span: Span::zero(),
+                        path: IrTypePath::single(policy.trim()),
+                    }),
+                }
+            } else {
+                IrType::Path {
+                    span: Span::zero(),
+                    path: IrTypePath::single(value),
+                }
+            }
+        }
     }
 }

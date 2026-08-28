@@ -4,6 +4,7 @@
 // production effect handlers remain outside this crate.
 #![allow(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 
+pub mod policy;
 pub mod sound_eval;
 pub use sound_eval as eval;
 pub use sound_eval::*;
