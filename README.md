@@ -111,7 +111,7 @@ uses AuditService, ExecutionService:
     }
 ```
 
-See `examples/full_pipeline.aet` for the complete runnable demonstration.
+See [`examples/full_pipeline.aet`](examples/full_pipeline.aet) for the complete runnable demonstration.
 
 ## Safety posture
 
@@ -169,7 +169,7 @@ Breaker fixtures must fail with their expected diagnostic code. A parser crash o
 
 ## Status
 
-Aethel v0.3 is an **alpha policy compiler and symbolic simulator**. Its compiler boundary is intended to fail closed, but it is not a standalone production runtime. Review `docs/non-guarantees.md` before integrating it with real effects.
+Aethel v0.3 is an **alpha policy compiler and symbolic simulator**. Its compiler boundary is intended to fail closed, but it is not a standalone production runtime. Review [`docs/non-guarantees.md`](docs/non-guarantees.md) before integrating it with real effects.
 
 ## License
 
