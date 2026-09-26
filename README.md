@@ -148,10 +148,12 @@ See [`examples/full_pipeline.aet`](examples/full_pipeline.aet) for the complete 
 Those boundaries are deliberate. In the intended stack:
 
 ```text
-Lumen OS    chooses why work is done
+planner     chooses why work is done
 Aethel      decides what may be done and what proof is required
-FamilyClaw  executes approved work durably and exactly once
+FamilyClaw  runs approved work durably, each external effect at most once
 ```
+
+FamilyClaw's guarantee holds across its tested crash and replay windows. Its README lists what it does not promise: <https://github.com/Sisuthros/familyclaw-oss>.
 
 ## Verification
 
