@@ -48,7 +48,22 @@ enum Commands {
     },
 }
 
+/// Stack for the compiler thread. The parser caps nesting at `MAX_NESTING_DEPTH`;
+/// this makes that cap, not the OS default, the limit in every build profile. An
+/// unoptimised build spends several KiB per nesting level, so the 1 MiB main-thread
+/// stack on Windows would overflow near 100 levels without it.
+const COMPILER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
 fn main() -> anyhow::Result<()> {
+    std::thread::Builder::new()
+        .name("aethel".into())
+        .stack_size(COMPILER_STACK_BYTES)
+        .spawn(run)?
+        .join()
+        .map_err(|_| anyhow::anyhow!("compiler thread panicked"))?
+}
+
+fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
 
