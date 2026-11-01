@@ -8,12 +8,24 @@ use indexmap::IndexMap;
 use smallvec::SmallVec;
 use std::fmt;
 
+/// Deepest syntactic nesting the parser accepts before it reports `AE-OTHER-001`.
+///
+/// The parser, every later pass (HIR lowering, checker, IR lowering, interpreter)
+/// and the AST's own `Drop` all recurse over the tree, so this bound is what keeps
+/// them inside the stack. Left-leaning chains (`a + b + c`, `f()()`, `a.b.c`) count
+/// one level per link, because they build a tree that deep.
+pub const MAX_NESTING_DEPTH: usize = 256;
+
 /// Parser for Aethel source code.
 pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
     file_id: FileId,
     diagnostics: Diagnostics,
+    /// Current nesting level, never above `MAX_NESTING_DEPTH`.
+    depth: usize,
+    /// Set once the nesting limit is hit; later errors are only fallout and are dropped.
+    aborted: bool,
 }
 
 /// Precedence levels for Pratt parser.
@@ -57,7 +69,41 @@ impl<'a> Parser<'a> {
             current: 0,
             file_id,
             diagnostics: Diagnostics::new(),
+            depth: 0,
+            aborted: false,
         }
+    }
+
+    /// Runs `f` one nesting level deeper, or reports `AE-OTHER-001` and returns
+    /// `None` when that would pass `MAX_NESTING_DEPTH`.
+    fn nested<T>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+        let saved = self.depth;
+        let result = if self.descend() { f(self) } else { None };
+        self.depth = saved;
+        result
+    }
+
+    /// Enters one more nesting level. At the limit it reports `AE-OTHER-001` once,
+    /// moves to end of input so every enclosing parse function unwinds, and
+    /// returns `false`.
+    fn descend(&mut self) -> bool {
+        if self.depth >= MAX_NESTING_DEPTH {
+            if !self.aborted {
+                let diag = DiagnosticBuilder::error(
+                    codes::RECURSION_LIMIT(),
+                    format!("nesting is deeper than the limit of {MAX_NESTING_DEPTH} levels"),
+                )
+                .primary_label(self.current_span(), "nesting limit reached here")
+                .help("split the deeply nested part into separate `let` bindings or functions")
+                .build();
+                self.diagnostics.push(diag);
+                self.aborted = true;
+                self.current = self.tokens.len();
+            }
+            return false;
+        }
+        self.depth += 1;
+        true
     }
 
     pub fn parse(mut self) -> (Module, Diagnostics) {
@@ -95,6 +141,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) -> Option<Item> {
+        self.nested(Self::parse_item_inner)
+    }
+
+    fn parse_item_inner(&mut self) -> Option<Item> {
         let start = self.current_span();
         let is_pub = self.eat(TokenKind::KwPub);
 
@@ -159,6 +209,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_use_path(&mut self) -> Option<UsePath> {
+        self.nested(Self::parse_use_path_inner)
+    }
+
+    fn parse_use_path_inner(&mut self) -> Option<UsePath> {
         let start = self.current_span();
         let prefix = self.parse_type_path()?;
 
@@ -782,7 +836,12 @@ impl<'a> Parser<'a> {
         })
     }
 
+    // `parse_block` needs no guard of its own: it only recurses through `parse_stmt`.
     fn parse_stmt(&mut self) -> Option<Stmt> {
+        self.nested(Self::parse_stmt_inner)
+    }
+
+    fn parse_stmt_inner(&mut self) -> Option<Stmt> {
         let start = self.current_span();
 
         // let statement
@@ -964,6 +1023,10 @@ impl<'a> Parser<'a> {
 
     // Pattern parsing
     fn parse_pat(&mut self) -> Option<Pat> {
+        self.nested(Self::parse_pat_inner)
+    }
+
+    fn parse_pat_inner(&mut self) -> Option<Pat> {
         let start = self.current_span();
 
         // Wildcard
@@ -1110,6 +1173,10 @@ impl<'a> Parser<'a> {
 
     // Expression parsing (Pratt parser)
     fn parse_expr(&mut self, precedence: Precedence) -> Option<Expr> {
+        self.nested(|p| p.parse_expr_inner(precedence))
+    }
+
+    fn parse_expr_inner(&mut self, precedence: Precedence) -> Option<Expr> {
         let mut left = self.parse_primary()?;
 
         while !self.is_at_end() {
@@ -1118,6 +1185,11 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // Every infix step wraps `left` one level deeper (`a + b + c`, `f()()`,
+            // `a.b.c`), so it counts like nesting; `nested` resets the depth afterwards.
+            if !self.descend() {
+                return None;
+            }
             left = self.parse_infix(left)?;
         }
 
@@ -1815,6 +1887,10 @@ impl<'a> Parser<'a> {
 
     // Type parsing
     fn parse_type(&mut self) -> Option<Type> {
+        self.nested(Self::parse_type_inner)
+    }
+
+    fn parse_type_inner(&mut self) -> Option<Type> {
         let start = self.current_span();
 
         // Unit type
@@ -2241,6 +2317,9 @@ impl<'a> Parser<'a> {
     }
 
     fn error(&mut self, code: crate::diagnostic::DiagnosticCode, message: &str) {
+        if self.aborted {
+            return;
+        }
         let span = self.current_span();
         let diag = DiagnosticBuilder::error(code, message)
             .primary_label(span, "here")
@@ -2305,5 +2384,116 @@ fn main() -> int {
         let (module, diagnostics) = parse(&tokens, FileId::new(0));
         // Should parse without syntax errors
         assert!(!diagnostics.has_errors());
+    }
+
+    // ── Nesting limit (AE-OTHER-001) ──
+    // Deep input used to overflow the stack and abort the process. It must now
+    // produce exactly one clean diagnostic.
+
+    const DEEP: usize = 2_000;
+
+    fn error_codes(source: &str) -> Vec<String> {
+        let file_id = FileId::new(0);
+        let (_, diagnostics) = parse(&lex(source, file_id), file_id);
+        diagnostics
+            .errors()
+            .iter()
+            .map(|d| d.code.to_string())
+            .collect()
+    }
+
+    fn nested_parens(depth: usize) -> String {
+        format!(
+            "fn main() -> int {{ return {}1{}; }}",
+            "(".repeat(depth),
+            ")".repeat(depth)
+        )
+    }
+
+    fn nested_claim_types(depth: usize) -> String {
+        // Spaced `>` because the lexer reads `>>` as one shift token.
+        format!(
+            "fn f(c: {}int{}) -> int {{ return 1; }}",
+            "Claim<".repeat(depth),
+            " >".repeat(depth)
+        )
+    }
+
+    fn nested_blocks(depth: usize) -> String {
+        format!(
+            "fn main() -> int {{ {}{} return 1; }}",
+            "{".repeat(depth),
+            "}".repeat(depth)
+        )
+    }
+
+    fn nested_calls(depth: usize) -> String {
+        format!(
+            "fn main() -> int {{ return {}1{}; }}",
+            "f(".repeat(depth),
+            ")".repeat(depth)
+        )
+    }
+
+    #[test]
+    fn deep_parentheses_report_recursion_limit() {
+        assert_eq!(error_codes(&nested_parens(DEEP)), ["AE-OTHER-001"]);
+    }
+
+    #[test]
+    fn deep_claim_types_report_recursion_limit() {
+        assert_eq!(error_codes(&nested_claim_types(DEEP)), ["AE-OTHER-001"]);
+    }
+
+    #[test]
+    fn deep_blocks_report_recursion_limit() {
+        assert_eq!(error_codes(&nested_blocks(DEEP)), ["AE-OTHER-001"]);
+    }
+
+    #[test]
+    fn deep_calls_report_recursion_limit() {
+        assert_eq!(error_codes(&nested_calls(DEEP)), ["AE-OTHER-001"]);
+    }
+
+    #[test]
+    fn deep_left_leaning_and_item_nesting_report_recursion_limit() {
+        // These build a deep tree without deep parser recursion (`a + b + c`,
+        // `a.f().f()`), or recurse through other entry points (`else if`, `mod`).
+        let sources = [
+            format!("fn main() -> int {{ return 1{}; }}", "+1".repeat(DEEP)),
+            format!("fn main() -> int {{ return x{}; }}", ".f()".repeat(DEEP)),
+            format!(
+                "fn main() -> int {{ if a {{ }} {}return 1; }}",
+                "else if a { } ".repeat(DEEP)
+            ),
+            format!("{}{}", "mod m { ".repeat(DEEP), "}".repeat(DEEP)),
+        ];
+        for source in &sources {
+            assert_eq!(error_codes(source), ["AE-OTHER-001"]);
+        }
+    }
+
+    #[test]
+    fn nesting_of_depth_100_is_still_accepted() {
+        for source in [
+            nested_parens(100),
+            nested_claim_types(100),
+            nested_blocks(100),
+            nested_calls(100),
+            format!("fn main() -> int {{ return 1{}; }}", "+1".repeat(100)),
+        ] {
+            assert_eq!(error_codes(&source), Vec::<String>::new());
+        }
+    }
+
+    #[test]
+    fn recursion_limit_diagnostic_names_the_limit() {
+        let file_id = FileId::new(0);
+        let (_, diagnostics) = parse(&lex(&nested_parens(DEEP), file_id), file_id);
+        let message = &diagnostics.items[0].message;
+        assert!(
+            message.contains(&MAX_NESTING_DEPTH.to_string()),
+            "{message}"
+        );
     }
 }

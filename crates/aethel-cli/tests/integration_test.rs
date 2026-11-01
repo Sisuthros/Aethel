@@ -81,3 +81,50 @@ fn test_emit_ir() {
     let (ok, o) = run_aethel(&["emit-ir", "examples/refund/valid_verified.aet"]);
     assert!(ok && o.contains("ir_version"), "emit-ir: {o}");
 }
+
+// ── Nesting limit ──
+#[test]
+fn test_check_deep_nesting_is_a_diagnostic_not_a_crash() {
+    const DEPTH: usize = 2_000;
+    let programs = [
+        (
+            "parens",
+            format!(
+                "fn main() -> int {{ return {}1{}; }}",
+                "(".repeat(DEPTH),
+                ")".repeat(DEPTH)
+            ),
+        ),
+        (
+            "claim-types",
+            format!(
+                "fn f(c: {}int{}) -> int {{ return 1; }}",
+                "Claim<".repeat(DEPTH),
+                " >".repeat(DEPTH)
+            ),
+        ),
+        (
+            "blocks",
+            format!(
+                "fn main() -> int {{ {}{} return 1; }}",
+                "{".repeat(DEPTH),
+                "}".repeat(DEPTH)
+            ),
+        ),
+        (
+            "calls",
+            format!(
+                "fn main() -> int {{ return {}1{}; }}",
+                "f(".repeat(DEPTH),
+                ")".repeat(DEPTH)
+            ),
+        ),
+    ];
+    for (shape, source) in &programs {
+        let path = std::env::temp_dir().join(format!("aethel-deep-{shape}.aet"));
+        std::fs::write(&path, source).unwrap();
+        let (ok, o) = run_aethel(&["check", path.to_str().unwrap()]);
+        let _ = std::fs::remove_file(&path);
+        assert!(!ok && o.contains("AE-OTHER-001"), "{shape}: {o}");
+    }
+}
