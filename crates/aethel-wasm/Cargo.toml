@@ -13,7 +13,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-wasmtime = { version = "45", default-features = false, features = [
+wasmtime = { version = "48", default-features = false, features = [
     "cranelift",
     "runtime",
     "component-model",
